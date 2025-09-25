@@ -1,0 +1,671 @@
+<!doctype html>
+<meta charset="utf-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+
+<title>Codex Tiles MVP</title>
+<style>
+  :root{
+  color-scheme: dark;
+  --header-h: 52px;  /* JSで上書きされる既定値 */
+  --footer-h: 56px;  /* JSで上書きされる既定値 */
+}
+/* before でも after でも可。今回は after 例 */
+/* ベース色は少し明るめのグレー寄りに */
+html { background: #121212; }
+body{
+  margin:0;
+  color:#ddd;
+  font:14px 'Amiri','Noto Sans JP',system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,'Apple Color Emoji','Segoe UI Emoji';
+  display:grid; grid-template-rows:auto 1fr auto; height:100vh;
+  overflow-x:hidden;
+  background: transparent; /* ← after が模様を描くので body は透明でOK */
+  position: relative;      /* ← after の基準 */
+}
+
+/* ここでタイルを描画。クリックを邪魔せず、常に下にいる */
+body::after{
+  content:"";
+  position:fixed; inset:0;
+  background-image: url("image/haikei.svg"); /* ← ここを編集したいSVGのパスに */
+  background-repeat: repeat;
+  background-size: 96px 96px;   /* お好みで 72 / 128 に調整 */
+  pointer-events:none;
+  z-index: 0;     
+  opacity: 0.1;              /* 背景レイヤ。コンテンツは z-index:1 で上に */
+}
+/* === パオチャンカパーナ（反転）中のライトテーマ === */
+html.reversed { background: #ffffff; }          /* 背景を白 */
+html.reversed body::after{
+  opacity: 0.12;                                /* 模様は少しだけ濃く */
+  filter: brightness(0);                        /* ★ 模様SVGを黒くする */
+}
+/* コンテンツを前面に */
+header, main, footer { position:relative; z-index: 1; }
+
+
+  /* ヘッダーの行折り返しは許容しつつ、ボタン文字は折り返さない */
+header{
+  display:flex; align-items:center; gap:8px;
+  padding:8px; border-bottom:1px solid #222;
+  flex-wrap: wrap; /* 画面が狭い時は行を分ける */
+}
+.bar-left{ display:flex; gap:8px; align-items:center; }
+.bar-right{ display:flex; gap:8px; align-items:center; margin-left:auto; }
+button{ white-space: nowrap; }          /* ← ボタン内の改行を禁止 */
+label{ white-space: nowrap; }           /* ラベルも1行で */
+
+  #board{display:block;margin:8px auto;border:1px solid #333;background:#111}
+  #right{
+  position: fixed;
+  right: 8px;
+  top: var(--header-h);
+  bottom: var(--footer-h);
+  width: 300px;
+  border-left: 1px solid #222;
+  padding: 8px;
+  overflow: auto;
+  background: #0f0f0f;
+  z-index: 2;
+}
+
+  #right.hidden{ display:none !important; }
+  #log{white-space:pre-wrap;font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+  footer{display:flex;gap:8px;padding:8px;border-top:1px solid #222}
+  input,button{background:#161616;color:#ddd;border:1px solid #333;padding:6px 10px}
+  .pill{padding:2px 8px;border:1px solid #444;border-radius:999px;opacity:.8}
+  table{border-collapse:collapse;width:100%;font-size:12px}
+  th,td{border-bottom:1px solid #222;padding:4px}
+
+/* === Log line styles === */
+#log .logline{padding:4px 6px;margin:2px 0;border-radius:6px;display:block}
+#log .sys{opacity:.85}
+.log-seat-N{background:rgba(231,76,60,.15);border-left:2px solid #e74c3c}
+.log-seat-E{background:rgba(52,152,219,.15);border-left:2px solid #3498db}
+.log-seat-S{background:rgba(46,204,113,.15);border-left:2px solid #2ecc71}
+.log-seat-W{background:rgba(241,196,15,.15);border-left:2px solid #f1c40f}
+
+  @media (max-width: 720px){
+  #right{ right:0; width:88vw; }
+}
+
+</style>
+<header>
+  <!-- 左：turn と restart -->
+  <div class="bar-left">
+    <span id="turn" class="pill">ナギ: -</span>
+    <button id="restart">シャーンシャーン</button>
+    <button id="softRestart">パオシャーンシャーン</button>
+  </div>
+
+  <!-- 右：ログトグル＋入室UI -->
+  <div class="bar-right">
+    <label>ゾーサリーヌ <input id="name" placeholder="..." size="10"></label>
+    <label>オマ <select id="seat"></select></label>
+    <button id="sit">プッチョオマ</button>
+        <button id="togglePanel" title="ログ表示/非表示">フザケ パトゥ</button>
+  </div>
+</header>
+
+<main>
+  <canvas id="board" width="500" height="500"></canvas>
+  <aside id="right">
+    <h4>レーゾーサリーヌ</h4>
+    <table id="players"></table>
+    <h4>パトゥ</h4>
+    <div id="log"></div>
+  </aside>
+</main>
+<footer>
+  <input id="cmd" placeholder="..." style="flex:1">
+  <button id="send">オメ</button>
+</footer>
+<script>
+  const ws = new WebSocket((location.protocol.replace('http','ws')) + '//' + location.host + '/ws');
+  let snap = null;
+  let mySeat = null;
+let pendingSeat = null;
+
+const CID_KEY = 'cid';
+let CID = localStorage.getItem(CID_KEY);
+if (!CID) {
+  CID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  localStorage.setItem(CID_KEY, CID);
+}
+ws.addEventListener('open', ()=>{
+  // まずは復帰要求を投げる
+  ws.send(JSON.stringify({ type: 'resume', cid: CID }));
+});
+
+const TURN_COLORS = { N:'#e74c3c', E:'#3498db', S:'#2ecc71', W:'#f1c40f' };
+
+function updateTurnPill(snap){
+  const el = document.getElementById('turn');
+  if (!el || !snap) return;
+
+  const seat = snap.turnSeat || null;
+  const SL   = snap.seatLabels || {N:'N',E:'E',S:'S',W:'W'};
+
+  if (!seat){
+    el.textContent      = 'ナギ: -';
+    el.style.background = 'transparent';
+    el.style.borderColor= '#444';
+    el.style.color      = '';
+    return;
+  }
+  el.textContent      = `ナギ: ${SL[seat]}`;
+  const c = TURN_COLORS[seat] || '#444';
+  el.style.background = c;
+  el.style.borderColor= c;
+  el.style.color      = '#111';
+}
+
+
+// === log helpers ===
+function detectSeatFromText(text){
+  try{
+    const SL = (snap && snap.seatLabels) || {N:'N',E:'E',S:'S',W:'W'};
+    for (const s of ['N','E','S','W']){
+      const lab = SL[s]; if (!lab) continue;
+      if (text.startsWith(lab+':') || text.startsWith(lab+'：') || text.includes(`${lab}【ナギ】`)) return s;
+    }
+  }catch(_){}
+  return null;
+}
+function appendLogLine(text){
+  const el = document.querySelector('#log'); if (!el) return;
+  const seat = detectSeatFromText(String(text||''));
+  const div = document.createElement('div');
+  div.className = 'logline' + (seat? ` log-seat-${seat}` : (String(text||'').trim().startsWith('—') ? ' sys':''));
+  div.textContent = text;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+function rebuildLogFromSnapshot(s){
+  const el = document.querySelector('#log'); if (!el) return;
+  el.innerHTML = '';
+  (s?.logs || []).forEach(line => appendLogLine(line));
+}
+
+
+
+const zousanImg = new Image();
+zousanImg.src = 'image/zousan.svg';
+let zousanReady = false;
+zousanImg.onload = ()=>{ zousanReady = true; render(); };
+
+// 色付きバージョンをキャッシュ（席色で着色）
+const zCache = new Map(); // color -> offscreen canvas
+function colorizedZousan(color){
+  if (!zousanReady) return null;
+  if (zCache.has(color)) return zCache.get(color);
+  const S = 256;
+  const off = document.createElement('canvas');
+  off.width = S; off.height = S;
+  const oc = off.getContext('2d');
+  oc.clearRect(0,0,S,S);
+  oc.drawImage(zousanImg, 0,0, S,S);
+  oc.globalCompositeOperation = 'source-atop';
+  oc.fillStyle = color;
+  oc.fillRect(0,0,S,S);
+  oc.globalCompositeOperation = 'source-over';
+  zCache.set(color, off);
+  return off;
+}
+
+// === Onmyou piece (SVG as piece) ===
+const onmyouImg = new Image();
+onmyouImg.src = 'image/onmyou.svg';   // ← ここに置いておく
+let onmyouReady = false;
+onmyouImg.onload = ()=>{ onmyouReady = true; render(); };
+
+// 席色で着色したバリエーションをキャッシュ
+const onCache = new Map(); // color -> offscreen canvas
+function colorizedOnmyou(color){
+  if (!onmyouReady) return null;
+  if (onCache.has(color)) return onCache.get(color);
+
+  const S = 256;
+  const off = document.createElement('canvas');
+  off.width = S; off.height = S;
+  const oc = off.getContext('2d');
+
+  oc.clearRect(0,0,S,S);
+  oc.drawImage(onmyouImg, 0,0, S,S);
+  oc.globalCompositeOperation = 'source-atop'; 
+  oc.fillStyle = color;
+  oc.fillRect(0,0,S,S);
+  oc.globalCompositeOperation = 'source-over'; 
+
+  onCache.set(color, off);
+  return off;
+}
+
+
+
+
+  ws.addEventListener('open', ()=>{
+  const nm = sessionStorage.getItem('name');
+  if (nm) { document.querySelector('#name').value = nm;
+            ws.send(JSON.stringify({type:'name', name:nm})); }
+
+});
+
+
+
+
+
+
+
+
+  ws.addEventListener('message', ev=>{
+    const m = JSON.parse(ev.data);
+  if (m.type==='hello'){
+    sessionStorage.setItem('myCid', m.id);
+    } else if (m.type==='you'){
+      mySeat = m.seat || null;
+      if (mySeat == null) {
+      document.documentElement.classList.remove('reversed');
+    }
+        render();
+    return;
+      const seatSel = document.querySelector('#seat');
+      const sitBtn  = document.querySelector('#sit');
+      if (mySeat){
+        if (seatSel) seatSel.disabled = true;
+        if (sitBtn)  sitBtn.disabled  = true;
+      } else {
+        if (seatSel) seatSel.disabled = false;
+        if (sitBtn)  sitBtn.disabled  = false;
+        sessionStorage.removeItem('name');
+        sessionStorage.removeItem('myCid');
+    const nameEl = document.querySelector('#name');
+    if (nameEl) nameEl.value = '';
+      }
+      pendingSeat = null;
+      render();
+    } else if (m.type==='state'){
+  snap = m.data;
+      document.documentElement.classList.toggle('reversed', !!snap.reverseActive);
+  pendingSeat = null;
+  render();
+  rebuildLogFromSnapshot(snap);
+}else if (m.type==='log'){
+      const el = document.querySelector('#log');
+      appendLogLine(m.line);
+    // } else if (m.type==='help'){
+    //   (m.lines || []).forEach(line => appendLogLine(line));
+    //   el.textContent += m.lines.join('\n') + '\n'; el.scrollTop = el.scrollHeight;
+    } else if (m.type==='path'){
+      animatePath(m);
+    } else if (m.type==='error'){
+      alert(m.message);
+    }
+  });
+
+document.querySelector('#sit').onclick = ()=>{
+  const name = document.querySelector('#name').value.trim();
+  if (name){ localStorage.setItem('name', name); ws.send(JSON.stringify({type:'name', name})); }
+
+  const seatSel = document.querySelector('#seat');
+  const seat = seatSel.value;
+  if (!'NESW'.includes(seat)) return alert('フザケ キキヤーィ');
+
+  pendingSeat = seat;
+  disableSeatOption(seat, true);
+
+  ws.send(JSON.stringify({type:'seat', seat}));
+};
+document.querySelector('#softRestart').onclick = ()=>{
+  if (confirm('パオシャーンシャーン オメ？')) {
+    ws.send(JSON.stringify({type:'resetGame'}));
+  }
+};
+
+// 既存
+document.querySelector('#send').onclick = sendCmd;
+document.querySelector('#restart').onclick = ()=>{
+  if (confirm('シャーンシャーン オメ？')){
+    ws.send(JSON.stringify({type:'reset'}));
+    sessionStorage.removeItem('name');
+    const nameEl = document.querySelector('#name');
+    if (nameEl) nameEl.value = '';
+    const seatSel = document.querySelector('#seat');
+    if (seatSel){ seatSel.disabled = false; seatSel.value = ''; }
+  }
+};
+
+
+document.querySelector('#cmd').addEventListener('keydown', e=>{ if (e.key==='Enter' && (e.ctrlKey||e.metaKey)) sendCmd(); });
+
+
+
+const panel = document.querySelector('#right');
+const toggleBtn = document.querySelector('#togglePanel');
+
+// 前回状態を復元
+const saved = localStorage.getItem('panelHidden') === '1';
+if (saved) {
+  panel.classList.add('hidden');
+  toggleBtn.textContent = 'パトゥ';
+} else {
+  toggleBtn.textContent = 'フザケ パトゥ';
+}
+
+// クリックで切り替え
+toggleBtn.onclick = ()=>{
+  const hidden = panel.classList.toggle('hidden');
+  localStorage.setItem('panelHidden', hidden ? '1' : '0');
+  toggleBtn.textContent = hidden ? 'パトゥ' : 'フザケ パトゥ';
+};
+
+
+// ==== 可変ヘッダー/フッターに追従して右パネル位置を調整 ====
+const rootStyle = document.documentElement.style;
+function updatePanelInsets(){
+  const header = document.querySelector('header');
+  const footer = document.querySelector('footer');
+  const hh = header ? header.offsetHeight : 52;
+  const fh = footer ? footer.offsetHeight : 56;
+  rootStyle.setProperty('--header-h', hh + 'px');
+  rootStyle.setProperty('--footer-h', fh + 'px');
+}
+updatePanelInsets();                 // 初回
+window.addEventListener('resize', updatePanelInsets);
+
+// ヘッダー/フッターの高さ変化を監視（折り返しやフォント読み込みに対応）
+if ('ResizeObserver' in window){
+  const ro = new ResizeObserver(updatePanelInsets);
+  const header = document.querySelector('header');
+  const footer = document.querySelector('footer');
+  if (header) ro.observe(header);
+  if (footer) ro.observe(footer);
+}
+
+
+function disableSeatOption(val, disabled){
+  const seatSel = document.querySelector('#seat');
+  if (!seatSel) return;
+  const opt = [...seatSel.options].find(o=>o.value===val);
+  if (opt) opt.disabled = !!disabled;
+}
+
+
+  function sendCmd(){
+  const t = document.querySelector('#cmd');
+  if (!t) return;
+
+  const sendText = t.value.trim();
+  if (!sendText) return;
+
+  ws.send(JSON.stringify({ type:'cmd', text: sendText }));
+
+}
+
+ 
+  const cvs = document.querySelector('#board');
+  const ctx = cvs.getContext('2d');
+function updateSeatSelectNonDestructive(snap, mySeat){
+  const seatSel = document.querySelector('#seat');
+  if (!seatSel) return;
+  const SL = snap?.seatLabels || {N:'N',E:'E',S:'S',W:'W'};
+  const desired = [["","—"],["N",SL.N],["E",SL.E],["S",SL.S],["W",SL.W]];
+  const prevValue = seatSel.value;
+  const cur = new Map([...seatSel.options].map(o => [o.value, o]));
+  for (const [val,label] of desired){
+    let opt = cur.get(val);
+    if (!opt){ opt = new Option(label,val); seatSel.add(opt); }
+    else if (opt.textContent !== label){ opt.textContent = label; }
+    opt.disabled = (val===""? false : !!snap.players?.[val]);
+  }
+  for (const o of [...seatSel.options]){
+    if (!desired.some(([v]) => v === o.value)) seatSel.remove(o.index);
+  }
+  seatSel.disabled = !!mySeat;
+  if (!mySeat){
+    const exists = [...seatSel.options].some(o => o.value === prevValue && !o.disabled);
+    seatSel.value = exists ? prevValue : "";
+  }
+}
+
+
+  function render(){
+
+  if (!snap) return;
+  if (snap) updateSeatSelectNonDestructive(snap, mySeat);
+     if (!snap) return;
+     const SL = snap.seatLabels || {N:'N',E:'E',S:'S',W:'W'};
+    updateSeatSelectNonDestructive(snap, mySeat);
+    updateTurnPill(snap);
+
+   
+    const ph = document.querySelector('#phase'); if (ph) ph.textContent = snap.phase;
+
+const turnEl = document.querySelector('#turn');
+
+// players table（席列をラベルで）
+const rows = ['<tr><th>オマ</th><th>ゾーサリーヌ</th><th>ゾーサン</th></tr>'];
+for (const seat of ['N','E','S','W']){
+  const p = snap.players?.[seat];
+  rows.push(`<tr><td>${SL[seat]}</td><td>${p? p.name: '-'}</td><td>${p? p.score: 0}</td></tr>`);
+}
+document.querySelector('#players').innerHTML = rows.join('');
+
+
+
+
+    // board
+    const W = cvs.width, H = cvs.height; ctx.clearRect(0,0,W,H);
+    const PAD = Math.round(Math.min(W,H) * 0.08);
+const innerW = W - PAD*2, innerH = H - PAD*2;
+const cell = innerW / 5;
+
+// グリッド（内側に描く）
+ctx.strokeStyle = '#333';
+for (let i=0;i<=5;i++){
+  ctx.beginPath(); ctx.moveTo(PAD, PAD + i*cell); ctx.lineTo(PAD + innerW, PAD + i*cell); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(PAD + i*cell, PAD); ctx.lineTo(PAD + i*cell, PAD + innerH); ctx.stroke();
+}
+// ラベル（盤の外側に大きめ）
+const COLS = (snap.labels?.cols ?? ['A','B','C','D','E']).slice(0,5);
+const ROWS = (snap.labels?.rows ?? ['1','2','3','4','5']).slice(0,5);
+
+ctx.save();
+ctx.fillStyle = '#bbb';
+ctx.font = '18px ui-monospace';
+
+// 上：列（外側・下揃え）
+ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+COLS.forEach((ch,i)=> ctx.fillText(ch, PAD + i*cell + cell/2, PAD - 6));
+
+// 左：行（外側・右揃え）
+ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+ROWS.forEach((ch,i)=> ctx.fillText(ch, PAD - 6, PAD + i*cell + cell/2));
+ctx.restore();
+
+// 便利用：盤座標→ピクセル
+const gx = x => PAD + x*cell;
+const gy = y => PAD + y*cell;
+    // arrows（座席ごとの内向きに回した象さんSVG）
+    // arrows
+if (snap.arrows){
+  for (const [seat,xy] of Object.entries(snap.arrows)){
+     if (!xy) continue;
+     drawArrowMarker(xy.x, xy.y, seat);
+   }
+ }
+
+
+
+
+    // pieces
+    for (let y=0;y<5;y++) for (let x=0;x<5;x++){
+      const c = snap.board[y][x]; if (!c) continue;
+      drawPiece(x,y,c.dir, seatColor(c.owner));
+    }
+
+    // 自席の辺ハイライト＆外周に名前
+    // 自席ハイライト帯
+    // 自席ハイライト（外側の帯）
+// --- 外周ハイライト：全員を薄く、自席は重ねて濃く ---
+const drawEdgeBand = (seat, alpha)=> {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = seatColor(seat);
+  if (seat==='N') ctx.fillRect(PAD, PAD - cell*0.12, innerW, cell*0.12);
+  if (seat==='S') ctx.fillRect(PAD, PAD + innerH,  innerW, cell*0.12);
+  if (seat==='W') ctx.fillRect(PAD - cell*0.12, PAD, cell*0.12, innerH);
+  if (seat==='E') ctx.fillRect(PAD + innerW,  PAD, cell*0.12, innerH);
+  ctx.restore();
+};
+
+// まず「着席済みの全席」を薄く表示
+['N','E','S','W'].forEach(s=>{
+  if (snap.players?.[s]) drawEdgeBand(s, 0.10);
+});
+// さらに自席だけ少し濃く
+if (mySeat) drawEdgeBand(mySeat, 0.20);
+
+// 外側の名前
+function drawName(seat, x, y, rot=0){
+  const p = snap.players?.[seat]; if (!p) return;
+  ctx.save();
+  ctx.translate(x,y); ctx.rotate(rot);
+  ctx.fillStyle = (seat===mySeat)? '#fff' : '#bbb';
+  ctx.font = (seat===mySeat? 'bold ' : '') + '18px ui-monospace';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(p.name, 0, 0);
+  ctx.restore();
+}
+drawName('N', PAD + innerW/2,     PAD - 24,          0);
+drawName('S', PAD + innerW/2,     PAD + innerH + 24, 0);
+drawName('W', PAD - 24,           PAD + innerH/2,   -Math.PI/2);
+drawName('E', PAD + innerW + 24,  PAD + innerH/2,    Math.PI/2);
+
+
+function drawPiece(x, y, dir, color){
+  const cx = gx(x) + cell/2,  cy = gy(y) + cell/2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angleForDir(dir));
+
+  const sz = cell * 0.86; // お好みで 0.8〜0.95
+
+  if (onmyouReady){
+    const img = colorizedOnmyou(color);
+    if (img){
+      // 反転中（パオチャンカパーナ）を少しわかりやすくしたいなら薄い白グローを足す
+      if (snap?.reverseActive){
+        ctx.save();
+        ctx.globalAlpha = 0.65;
+        ctx.drawImage(colorizedOnmyou('#ffffff'), -sz/2, -sz/2, sz, sz); // 白い仮グロー
+        ctx.restore();
+      }
+      ctx.drawImage(img, -sz/2, -sz/2, sz, sz);
+      ctx.restore();
+      return;
+    }
+  }
+
+  // フォールバック：五角形（画像未ロード時だけ）
+  const r = cell * 0.38;
+  const pts = regularPolygonPoints(5, r, -Math.PI/2);
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+  ctx.fillStyle = color; ctx.fill();
+  ctx.lineWidth = Math.max(2, cell*0.06);
+  ctx.strokeStyle = (snap?.reverseActive ? '#fff' : '#000');
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+
+function drawArrowMarker(x, y, seat){
+  const color = seatColor(seat);
+  const dir   = seatInwardDir(seat);
+  const ang   = angleForDir(dir);
+  const cx = gx(x) + cell/2,  cy = gy(y) + cell/2;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(ang);
+  if (zousanReady){
+    const img = colorizedZousan(color);
+    const sz = cell * 0.9; // 矢印は大きめ
+    ctx.globalAlpha = 0.5;   // ★ 濃さを下げる（下が見える）
+    ctx.drawImage(img, -sz/2, -sz/2, sz, sz);
+    ctx.globalAlpha = 1.0;
+  } else {
+    // フォールバック：小さめ五角形
+    const r = cell * 0.38;
+    const pts = regularPolygonPoints(5, r, -Math.PI/2);
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.fillStyle = color; ctx.fill();
+    ctx.lineWidth = Math.max(2, cell*0.06); ctx.strokeStyle = '#000'; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function angleForDir(dir){
+  if (dir==='up')    return 0;
+  if (dir==='right') return Math.PI/2;
+  if (dir==='down')  return Math.PI;
+  if (dir==='left')  return -Math.PI/2;
+  return 0;
+}
+
+function regularPolygonPoints(n, r, start){
+  const out = [];
+  for (let i=0;i<n;i++){
+    const a = start + i * 2*Math.PI/n;
+    out.push({x: Math.cos(a)*r, y: Math.sin(a)*r});
+  }
+  return out;
+}
+
+// 自席→内向きの方向（象さんの向き用）
+function seatInwardDir(seat){
+  return seat==='N' ? 'down' :
+         seat==='S' ? 'up'   :
+         seat==='E' ? 'left' :
+         seat==='W' ? 'right' : 'up';
+}
+  
+    function triangle(x1,y1,x2,y2,x3,y3){ ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.lineTo(x3,y3); ctx.closePath(); }
+    function seatColor(seat){ return {N:'#e74c3c',E:'#3498db',S:'#2ecc71',W:'#f1c40f'}[seat] || '#aaa'; }
+  }
+
+  async function animatePath({seat, path, exit, scoreDelta}){
+    // 簡易アニメーション：1セルずつハイライト
+    const cell = cvs.width/5;
+    for (let i=0;i<path.length;i++){
+      render();
+      const {x,y} = path[i];
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      const W = cvs.width, H = cvs.height;
+ const PAD = Math.round(Math.min(W,H) * 0.08);
+ const innerW = W - PAD*2;
+ const cell = innerW/5;
+ ctx.fillRect(PAD + x*cell + 1, PAD + y*cell + 1, cell-2, cell-2);
+      await wait(120);
+    }
+//     const el = document.querySelector('#log');
+//     const SL2 = snap?.seatLabels || {N:'N',E:'E',S:'S',W:'W'};
+// const exitLabel = SL2[exit] || exit; // exitがN/E/S/Wならラベル化、loop等はそのまま
+// el.textContent += `[${SL2[seat]||seat}] exit=${exitLabel} Δ=${scoreDelta}\n`;
+
+//     el.scrollTop = el.scrollHeight;
+  }
+  function wait(ms){ return new Promise(r=>setTimeout(r,ms)); 
+
+//     const SL = snap?.seatLabels || {N:'N',E:'E',S:'S',W:'W'};
+// appendLogLine(`${SL[seat]||seat}: exit=${SL[exit]||exit} Δ=${scoreDelta}`);
+
+
+  }
+</script>
