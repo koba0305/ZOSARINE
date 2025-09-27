@@ -298,6 +298,7 @@ function resetBoard() {
   // state.logs = state.logs.slice(-200);
   state.turnIdx = 0;
   state.phaseActions = {};
+  state.lastTurnSeat = null;
   state.oath = {};
   state.vow2x = {};
   state.reverseActive = false;
@@ -305,7 +306,7 @@ function resetBoard() {
   for (const seat of SEATS) if (state.players[seat]) state.players[seat].score ??= 0;
 }
 function currentTurnSeat(){ return SEAT_ORDER[state.turnIdx]; }
-function logTurnNow(){
+function logTurnNow(force = false){
   const seat = currentTurnSeat();
   if (!force && state.lastTurnSeat === seat) return; // 同じ席なら二重ログを抑止
   state.lastTurnSeat = seat;
@@ -427,14 +428,33 @@ function traceAnimal(seat, mode = "launch") {
   if (!start) return { path: [], exit: "none", bends: 0, reason: "no_start" };
 
   let { dx, dy } = seatToInward(seat);
-  let x = start.x + dx;
-  let y = start.y + dy;
+  // まず矢印が刺さっているセル(=start)に駒があるなら、そこで向きを変える
+  // その後に一歩進む、という順序に変更
+  let x = start.x;
+  let y = start.y;
 
   const seenStates = new Set(); // ループ検出
   const usedColors = new Set(); // launch2: 同じ色は2回目以降は無視
   const path = [];
   let bends = 0;
-
+// ★ 最初に「矢印セル上のコマ」を評価
+  const under = state.board[y]?.[x];
+  if (under) {
+    let v = DIR_VECT[under.dir];
+    if (state.reverseActive) v = { dx: -v.dx, dy: -v.dy };
+    if (mode === "launch2") {
+      if (!usedColors.has(under.owner)) {
+        if (v.dx !== dx || v.dy !== dy) bends++;
+        dx = v.dx; dy = v.dy;
+        usedColors.add(under.owner);
+      }
+    } else {
+      if (v.dx !== dx || v.dy !== dy) bends++;
+      dx = v.dx; dy = v.dy;
+    }
+  }
+  // 矢印セルでの向き確定後、最初の一歩を踏み出す
+  x += dx; y += dy;
   for (let step = 0; step < STEP_LIMIT; step++) {
     // 盤外に出た＝どの辺から出たかで得点計算
     if (x < 0 || x >= SIZE || y < 0 || y >= SIZE) {
@@ -510,18 +530,21 @@ function tryAdvancePhase(){
   if (state.phase==="place1" && placePhaseDone()){
     state.phase = "arrow"; state.turnIdx = 0; state.phaseActions = {};
     log("— ギッ  (チャン オメ) —");
+    logTurnNow(true);
     changed = true;
   } else if (state.phase==="arrow" && Object.keys(state.arrows).length>=4){
     state.phase = "place2"; state.turnIdx = 0; state.phaseActions = {};
     log("— グウ  (トムヤ オメ) —");
+    logTurnNow(true);
     changed = true;
   } else if (state.phase==="place2" && placePhaseDone()){
     state.phase = "launch"; state.turnIdx = 0;
     log("— デベ  (パオ オメ) —");
+    logTurnNow(true);
     changed = true;
   }
   broadcastAll({type:"state", data:snapshot()});
-  logTurnNow();
+  return changed;
 }
 
 function assertTurn(seat){
@@ -535,20 +558,9 @@ function onCommand(seat, text){
 
   const raw = String(text||"").trim();
 
-{
-  const joined = String(text||"").replace(/[!\s]+/g,'').toLowerCase(); // !と空白を除去
-  if (REVERSE_ALIASES.has(joined)) {
-    if (state.phase !== "launch") throw new Error("フザケ パオチャンカパーナ ナギ");
-    if (state.reverseUsed)        throw new Error("フザケ ギッ パオチャンカパーナ");
-    state.reverseActive = true;
-    state.reverseUsed   = true;
-    log(`${seatLabel(seat)}: パオチャンカパーナ !!!!!`);
-    broadcastAll({ type:"state", data:snapshot() });
-    // 自分の手で即launch（ププアププア中のパオは禁止は handleLaunchCommon 側で弾かれる）
-    handleLaunchCommon(seat, "launch");
-    return; // ← onCommand 内なので合法
-  }
-}
+// 先に「パオチャンカパーナ」だけ特別処理（1秒待って自動パオ）
+ if (tryReverseDeclaration(seat, text)) return;
+
   // === 誓い：オマ フザケ ン パオ（スペース/大小/かな無視） ===
   {
     const joined = raw.replace(/\s+/g, '').toLowerCase();
@@ -586,7 +598,7 @@ function onCommand(seat, text){
     log(`${seatLabel(seat)}: トムヤ ムクン`);
     markDone(seat);
     advanceTurn();
-    tryAdvancePhase();
+  if (!tryAdvancePhase()) logTurnNow();
     return;
   }
 }
@@ -629,24 +641,65 @@ function onCommand(seat, text){
 
 
 
-if (cmd==="put"){
-  if (!(state.phase==="place1"||state.phase==="place2")) throw new Error("フザケ プッチョ ナギ");
+if (cmd === "put") {
+  if (!(state.phase === "place1" || state.phase === "place2")) {
+    throw new Error("フザケ プッチョ ナギ");
+  }
   assertTurn(seat);
 
-  const xy = cellToXY(parts[1]); if (!xy) throw new Error("フザケ べヒュー");
+  // === ここがポイント ===
+  // cmd以降（rest部分）を全部つなげてから「セル＋向き」を切り出す
+  // 例:
+  //  - "マー ダラ ばーさ"      → "マーダラばーさ"
+  //  - "マー ダラばーさ"        → "マーダラばーさ"
+  //  - "マーダラ ばーさ"        → "マーダラばーさ"
+  //  - "ダラ マー ばーさ"       → "ダラマーばーさ"（cellToXYは行→列も対応）
+  const restJoined = (rest || "").replace(/[\s,.\-/_]+/g, ""); // 区切りは全部削除
+  let cellTok = null, dirTok = null;
+
+  // まずは「全部くっつけた文字列」からセル＋向きに分割を試す
+  const pr = splitCellAndDir(restJoined);
+  if (pr) {
+    [cellTok, dirTok] = pr; // 例: ["マーダラ", "ばーさ"]
+  } else {
+    // 念のためのフォールバック（従来ロジック）
+    let parts2 = [];
+    if (rest && rest.trim()) parts2 = rest.trim().split(/\s+/);
+
+    if (parts2.length === 1) {
+      const pr2 = splitCellAndDir(parts2[0]);
+      if (pr2) [cellTok, dirTok] = pr2;
+    } else if (parts2.length >= 2) {
+      // 「マー ダラ ばーさ」系
+      const maybeCell = parts2[0] + parts2[1]; // "マーダラ" or "ダラマー"
+      if (cellToXY(maybeCell)) {
+        cellTok = maybeCell;
+        dirTok  = parts2.slice(2).join(""); // "ばーさ" など
+      } else {
+        // それでもダメなら「2個目にdirがくっついてる」想定で切ってみる
+        const pr3 = splitCellAndDir(parts2[1]);
+        if (pr3) {
+          cellTok = parts2[0] + pr3[0];   // "マー" + "ダラ" = "マーダラ"
+          dirTok  = pr3[1];               // "ばーさ"
+        }
+      }
+    }
+  }
+
+  // バリデーション
+  const xy = cellToXY(cellTok);
+  if (!xy) throw new Error("フザケ べヒュー");
+
   if (state.board[xy.y][xy.x]) throw new Error("フザケ プッチョトムヤ");
 
-  const dirTok = parts[2]; if (!dirTok) throw new Error("フザケ キキヤーィ");
-
-  // ① 入力→相対(up/down/left/right)
-  const rel = normalizeDir(dirTok); // 既存：DIR_ALIASES を参照して正規化
+  const rel = normalizeDir(dirTok);
   if (!DIR_VECT[rel]) throw new Error("フザケ トムヤ (バババ/パロロ/ヘーネ/バーサ) オメ");
 
-  // ② 相対→絶対（席に応じて回転）
+  // 席基準の相対→絶対へ
   const abs = seatRelToAbs(seat, rel);
 
-  // ③ 置くのは絶対向き、ログは相対語彙で
-  state.board[xy.y][xy.x] = {dir: abs, owner: seat};
+  // 置く
+  state.board[xy.y][xy.x] = { dir: abs, owner: seat };
   log(`${seatLabel(seat)}: トムヤ ${xyLabel(xy)} ${showRel(rel)}`);
 
   markDone(seat);
@@ -654,6 +707,7 @@ if (cmd==="put"){
   tryAdvancePhase();
   return;
 }
+
 
 if (cmd === "launch")  { handleLaunchCommon(seat, "launch",  parts[1]); return; }
 if (cmd === "launch2") { handleLaunchCommon(seat, "launch2", parts[1]); return; }
@@ -670,7 +724,7 @@ if (cmd === "launch2") { handleLaunchCommon(seat, "launch2", parts[1]); return; 
   log(`${seatLabel(seat)}: ペピピ ${parts[1].toUpperCase()}`);
   markDone(seat);               // ← 回収も1手としてカウント
   advanceTurn();
-  tryAdvancePhase();
+  if (!tryAdvancePhase()) logTurnNow();
   return;
 }
 
@@ -688,33 +742,36 @@ if (cmd==="arrow"){
   state.arrows[seat] = xy;
   log(`${seatLabel(seat)}: チャン ${tok}`);
   advanceTurn();
-  tryAdvancePhase();
+  if (!tryAdvancePhase()) logTurnNow();
   return;
 }
 
   throw new Error("フザケ テメ"); // 未知コマンド
 }
-
 function handleLaunchCommon(seat, mode, arg){ // mode: "launch" | "launch2"
   if (state.phase !== "launch") throw new Error("フザケ パオ ナギ");
   assertTurn(seat);
 
-  // --- ヘッダー＆手番行＆アクション行をここで先に出す ---
+  // 見出しログ
   log(`—(${mode==="launch" ? "パオ" : "プア"} オメ) —`);
   log(`${seatLabel(seat)}【ナギ】`);
   log(`${seatLabel(seat)}: ${mode==="launch" ? "パオ" : "プア"}`);
 
-  // 1) pass優先
+  // 1) pass はここで処理して終了
   const a = resolveArg(mode, arg);
   if (a === "pass") {
-    // ここは既に「…: パオ ムクン/プア ムクン」を出したいなら↑の3行の代わりにログ調整してね
-    log(`${seatLabel(seat)}: ${mode==="launch"?"パオ":"プア"} ムクン`);
+    log(`${seatLabel(seat)}: ${mode==="launch" ? "パオ" : "プア"} ムクン`);
     if (state.vow2x[seat]?.active) {
       state.vow2x[seat].active = false;
       log(`${seatLabel(seat)}: ププアププア ナギ`);
     }
     advanceTurn();
-    if (state.turnIdx === 0) { state.phase = "end"; log("— ンシャンシャ —"); }
+    if (state.turnIdx === 0) {
+      state.phase = "end";
+      log("— ンシャンシャ —");
+    } else {
+      logTurnNow();
+    }
     broadcastAll({ type: "state", data: snapshot() });
     return;
   }
@@ -724,12 +781,13 @@ function handleLaunchCommon(seat, mode, arg){ // mode: "launch" | "launch2"
     throw new Error("フザケ パオ : ププアププア ナギ");
   }
 
-  // 3) 余計な引数は不許可
+  // 3) pass 以外の余計な引数は不許可（許したいならここを緩める）
   if (arg) throw new Error("フザケ オマパトゥ");
 
   // 4) 矢印未設定
   if (!state.arrows[seat]) throw new Error("フザケ チャン オメ");
 
+  // 本処理
   const { path, exit, bends } = traceAnimal(seat, mode);
 
   let delta = 0;
@@ -746,14 +804,10 @@ function handleLaunchCommon(seat, mode, arg){ // mode: "launch" | "launch2"
 
   state.players[seat].score = (state.players[seat].score || 0) + delta;
 
-  // ★ 希望フォーマット：「→ チキン bends=… scoreΔ=…」
-  const showExit = (ex)=>{
-    if (ex === "loop") return "チキン";       // ← 要望に合わせて "loop" を「チキン」に
-    return seatLabel(ex) || ex;
-  };
+  const showExit = (ex)=> ex === "loop" ? "チキン" : (seatLabel(ex) || ex);
   log(`→ ${showExit(exit)} トムヤ${bends} ゾーサン${delta}`);
 
-  // パス表示だけにして、ここはログだけ（DOMは animatePath が描画のみ担当）
+  // パス描画用イベント
   broadcastAll({ type: "path", seat, path, exit, scoreDelta: delta, bends, mode });
 
   // 誓いボーナス
@@ -766,6 +820,7 @@ function handleLaunchCommon(seat, mode, arg){ // mode: "launch" | "launch2"
     }
   }
 
+  // 次手番へ
   advanceTurn();
   if (state.turnIdx === 0){
     for (const s of SEATS){
@@ -780,15 +835,15 @@ function handleLaunchCommon(seat, mode, arg){ // mode: "launch" | "launch2"
     }
     state.phase = "end";
     log("— ンシャンシャ —");
+  } else {
+    logTurnNow();
   }
+
+  // ← ここも broadcastAll に統一
   broadcastAll({ type:"state", data:snapshot() });
 }
 
 
-
-
-//   throw new Error("フザケ テメ");
-// }
 
 
 function hardReset(){
@@ -891,7 +946,7 @@ ws.on("message", (buf)=>{
         ws,
         score: 0
       };
-      log(`${SEAT_LABELS[mySeat]}  ${myName} プッチョオマ`);
+      log(`${SEAT_LABELS[mySeat]}: ${myName} プッチョオマ`);
       ws.send(JSON.stringify({type:"you", seat: mySeat}));
 
       broadcastAll({ type:"state", data: snapshot() });
@@ -907,8 +962,9 @@ ws.on("message", (buf)=>{
     if (m.type === "cmd"){
       if (!mySeat) throw new Error("シャーンシャーン オマ オメ");
       onCommand(mySeat, m.text || "");
-      return;
-    }
+ ws.send(JSON.stringify({ type: "ok", for: "cmd" }));
+ return;
+}
 
     if (m.type === "reset") {
       // 席ごと完全リセット（ロビーへ戻る）

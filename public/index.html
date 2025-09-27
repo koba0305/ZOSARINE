@@ -3,7 +3,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 
-<title>Codex Tiles MVP</title>
+<title>ゾーサリーヌ</title>
 <style>
   :root{
   color-scheme: dark;
@@ -172,15 +172,25 @@ function detectSeatFromText(text){
   }catch(_){}
   return null;
 }
-function appendLogLine(text){
-  const el = document.querySelector('#log'); if (!el) return;
-  const seat = detectSeatFromText(String(text||''));
+function isPinnedBottom(el, pad = 4){
+  return el.scrollTop + el.clientHeight >= el.scrollHeight - pad;
+}
+
+function appendLogLine(text, seatCode){
+  const el = document.querySelector('#log');
+  if (!el) return;
+
+  // 追加前に“最下部付近にいるか”を判定（下にいた時だけ追従）
+  const stick = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+
   const div = document.createElement('div');
-  div.className = 'logline' + (seat? ` log-seat-${seat}` : (String(text||'').trim().startsWith('—') ? ' sys':''));
+  div.className = 'logline' + (seatCode ? ` log-seat-${seatCode}` : '');
   div.textContent = text;
   el.appendChild(div);
-  el.scrollTop = el.scrollHeight;
+
+  if (stick) el.scrollTop = el.scrollHeight;  // 下にいた時だけ追従
 }
+
 function rebuildLogFromSnapshot(s){
   const el = document.querySelector('#log'); if (!el) return;
   el.innerHTML = '';
@@ -262,6 +272,9 @@ function colorizedOnmyou(color){
     const m = JSON.parse(ev.data);
   if (m.type==='hello'){
     sessionStorage.setItem('myCid', m.id);
+     } else if (m.type==='ok' && m.for === 'cmd') {
+   const t = document.getElementById('cmd');
+   if (t) t.value = '';
     } else if (m.type==='you'){
       mySeat = m.seat || null;
       if (mySeat == null) {
@@ -640,27 +653,25 @@ function seatInwardDir(seat){
     function seatColor(seat){ return {N:'#e74c3c',E:'#3498db',S:'#2ecc71',W:'#f1c40f'}[seat] || '#aaa'; }
   }
 
-  async function animatePath({seat, path, exit, scoreDelta}){
-    // 簡易アニメーション：1セルずつハイライト
-    const cell = cvs.width/5;
-    for (let i=0;i<path.length;i++){
-      render();
-      const {x,y} = path[i];
-      ctx.fillStyle = 'rgba(255,255,255,0.2)';
-      const W = cvs.width, H = cvs.height;
- const PAD = Math.round(Math.min(W,H) * 0.08);
- const innerW = W - PAD*2;
- const cell = innerW/5;
- ctx.fillRect(PAD + x*cell + 1, PAD + y*cell + 1, cell-2, cell-2);
-      await wait(120);
-    }
-//     const el = document.querySelector('#log');
-//     const SL2 = snap?.seatLabels || {N:'N',E:'E',S:'S',W:'W'};
-// const exitLabel = SL2[exit] || exit; // exitがN/E/S/Wならラベル化、loop等はそのまま
-// el.textContent += `[${SL2[seat]||seat}] exit=${exitLabel} Δ=${scoreDelta}\n`;
+async function animatePath({ seat, path, exit, scoreDelta }){
+  // 描画用の寸法は毎ステップで再計算しない
+  const W = cvs.width, H = cvs.height;
+  const PAD = Math.round(Math.min(W, H) * 0.08);
+  const innerW = W - PAD * 2;
+  const cell = innerW / 5;
 
-//     el.scrollTop = el.scrollHeight;
+  for (let i = 0; i < path.length; i++){
+    render(); // いったん全体をクリーンに描く
+    const { x, y } = path[i];
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(PAD + x * cell + 1, PAD + y * cell + 1, cell - 2, cell - 2);
+    await wait(120);
   }
+
+  // ★ここが重要：最後の一コマを消して終了
+  render();
+}
+
   function wait(ms){ return new Promise(r=>setTimeout(r,ms)); 
 
 //     const SL = snap?.seatLabels || {N:'N',E:'E',S:'S',W:'W'};
@@ -668,4 +679,8 @@ function seatInwardDir(seat){
 
 
   }
+
+  
 </script>
+<!-- <script src="./client.js"></script> -->
+
