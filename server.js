@@ -337,15 +337,38 @@ function broadcastAll(msg){
 //   }
 // }
 
+
+
+// === 追加：在席者・手番関連ユーティリティ ===
+function seatedSeats(){
+  return SEATS.filter(s => !!state.players[s]);
+}
+function peekTurnSeat(){ // stateを変えずに「次に動くべき席」を見る
+  for (let k=0;k<SEAT_ORDER.length;k++){
+    const s = SEAT_ORDER[(state.turnIdx + k) % SEAT_ORDER.length];
+    if (state.players[s]) return s;
+  }
+  return null; // 誰もいない
+}
+function normalizeTurnIdx(){ // state.turnIdx が空席なら埋まってる席まで進める
+  for (let k=0;k<SEAT_ORDER.length;k++){
+    const s = SEAT_ORDER[state.turnIdx];
+    if (state.players[s]) return;
+    state.turnIdx = (state.turnIdx + 1) % SEAT_ORDER.length;
+  }
+}
+
+
 function snapshot(){
+  normalizeTurnIdx(); // ← ここを足す
   return {
     board: state.board,
     phase: state.phase,
-    turnSeat: SEAT_ORDER[state.turnIdx] ?? null,
+    turnSeat: peekTurnSeat(),
     arrows: state.arrows,
     reverseActive: state.reverseActive,
-    labels: { cols: LABELS.cols, rows: LABELS.rows }, 
-    seatLabels: SEAT_LABELS,   // ★ これを追加
+    labels: { cols: LABELS.cols, rows: LABELS.rows },
+    seatLabels: SEAT_LABELS,
     players: Object.fromEntries(SEATS.map(seat=>{
       const p = state.players[seat];
       return [seat, p? {name:p.name??seat, score:p.score??0} : null];
@@ -353,6 +376,7 @@ function snapshot(){
     logs: state.logs.slice(-30)
   };
 }
+
 
 function log(line){
   state.logs.push(line);
@@ -366,7 +390,12 @@ function everyoneSeated(){
 }
 
 function advanceTurn(){
-  state.turnIdx = (state.turnIdx + 1) % SEAT_ORDER.length;
+  // 次の埋まってる席まで回す
+  for (let i=0;i<SEAT_ORDER.length;i++){
+    state.turnIdx = (state.turnIdx + 1) % SEAT_ORDER.length;
+    const s = SEAT_ORDER[state.turnIdx];
+    if (state.players[s]) break;
+  }
   broadcastAll({type:"state", data:snapshot()});
 }
 
@@ -521,8 +550,9 @@ function allTurnsDoneForPhase(targetPhase){
 
 function markDone(seat){ state.phaseActions[seat] = true; }
 function placePhaseDone(){
-  return SEATS.every(seat => !!state.players[seat]) &&
-         SEATS.every(seat => !!state.phaseActions[seat]);
+  const seated = seatedSeats();
+  if (seated.length === 0) return false;
+  return seated.every(s => !!state.phaseActions[s]);
 }
 
 function tryAdvancePhase(){
@@ -532,23 +562,30 @@ function tryAdvancePhase(){
     log("— ギッ  (チャン オメ) —");
     logTurnNow(true);
     changed = true;
-  } else if (state.phase==="arrow" && Object.keys(state.arrows).length>=4){
-    state.phase = "place2"; state.turnIdx = 0; state.phaseActions = {};
-    log("— グウ  (トムヤ オメ) —");
-    logTurnNow(true);
-    changed = true;
+  } else if (state.phase==="arrow"){
+    const seated = seatedSeats();
+    const allSet = seated.length>0 && seated.every(s => !!state.arrows[s]); // ← 変更
+    if (allSet){
+      state.phase = "place2"; state.turnIdx = 0; state.phaseActions = {};
+      log("— グウ  (トムヤ オメ) —");
+      logTurnNow();
+      changed = true;
+    }
   } else if (state.phase==="place2" && placePhaseDone()){
     state.phase = "launch"; state.turnIdx = 0;
     log("— デベ  (パオ オメ) —");
-    logTurnNow(true);
+    logTurnNow();
     changed = true;
   }
   broadcastAll({type:"state", data:snapshot()});
   return changed;
 }
 
+
 function assertTurn(seat){
-  const need = SEAT_ORDER[state.turnIdx];
+  normalizeTurnIdx();
+  const need = peekTurnSeat();
+  if (!need) throw new Error("フザケ ナギ（オマ ヒンン）");
   if (seat !== need) throw new Error(`${seatLabel(need)} オメ ナギ`);
 }
 
@@ -979,13 +1016,23 @@ ws.on("message", (buf)=>{
 
 
 ws.on("close", ()=>{
-  if (mySeat && state.players[mySeat]){
-    state.players[mySeat].ws = null;
-    state.players[mySeat].disconnectedAt = Date.now();
-    log(`${seatLabel(mySeat)} (${myName}) ヒンン オマ`);
-    broadcastAll({type:"state", data:snapshot()});
-  }
+  if (!mySeat) return;
+  log(`${seatLabel(mySeat)} (${myName}) ヒンン オマ`);
+
+  // その席に紐づくアクションを掃除（在席者基準にするため）
+  delete state.players[mySeat];
+  delete state.arrows[mySeat];
+  delete state.phaseActions[mySeat];
+
+  // 今の turnIdx が空席になった場合に備えて正規化
+  normalizeTurnIdx();
+
+  broadcastAll({type:"state", data:snapshot()});
+
+  // 参照を消す
+  mySeat = null;
 });
+
 
 });//wss.on("connection", ...) を閉じる）
 

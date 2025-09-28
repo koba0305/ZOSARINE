@@ -125,6 +125,7 @@ label{ white-space: nowrap; }           /* ラベルも1行で */
   let snap = null;
   let mySeat = null;
 let pendingSeat = null;
+let lastSeatForLogs = null;
 
 const CID_KEY = 'cid';
 let CID = localStorage.getItem(CID_KEY);
@@ -161,17 +162,28 @@ function updateTurnPill(snap){
 }
 
 
-// === log helpers ===
 function detectSeatFromText(text){
   try{
     const SL = (snap && snap.seatLabels) || {N:'N',E:'E',S:'S',W:'W'};
+    const t  = String(text || '');
+
+    // 席行の検出：先頭が「ラベル + （： or : or 空白）」、または「ラベル【ナギ】」
     for (const s of ['N','E','S','W']){
       const lab = SL[s]; if (!lab) continue;
-      if (text.startsWith(lab+':') || text.startsWith(lab+'：') || text.includes(`${lab}【ナギ】`)) return s;
+      const re = new RegExp(`^${lab}(?:[：:]|\\s)`);
+      if (re.test(t) || t.includes(`${lab}【ナギ】`)){
+        lastSeatForLogs = s;   // 直近席を更新
+        return s;
+      }
     }
+
+    // 継続行：「→ …」は直前の席色を継承
+    if (/^\s*→/.test(t) && lastSeatForLogs) return lastSeatForLogs;
   }catch(_){}
+
   return null;
 }
+
 function isPinnedBottom(el, pad = 4){
   return el.scrollTop + el.clientHeight >= el.scrollHeight - pad;
 }
@@ -180,20 +192,27 @@ function appendLogLine(text, seatCode){
   const el = document.querySelector('#log');
   if (!el) return;
 
-  // 追加前に“最下部付近にいるか”を判定（下にいた時だけ追従）
-  const stick = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+  // 末尾に張り付いている時だけ自動スクロール
+  const stick = isPinnedBottom(el);
+
+  const seat = seatCode || detectSeatFromText(text); // ★ ここが肝
+  let cls = 'logline';
+  if (seat) cls += ` log-seat-${seat}`;
+  else if (String(text||'').trim().startsWith('—')) cls += ' sys';
 
   const div = document.createElement('div');
-  div.className = 'logline' + (seatCode ? ` log-seat-${seatCode}` : '');
+  div.className = cls;
   div.textContent = text;
   el.appendChild(div);
 
-  if (stick) el.scrollTop = el.scrollHeight;  // 下にいた時だけ追従
+  if (stick) el.scrollTop = el.scrollHeight;
 }
+
 
 function rebuildLogFromSnapshot(s){
   const el = document.querySelector('#log'); if (!el) return;
   el.innerHTML = '';
+  lastSeatForLogs = null; // ★ ここを追加（継続行の色ズレ防止）
   (s?.logs || []).forEach(line => appendLogLine(line));
 }
 
