@@ -125,6 +125,19 @@ function seatRelToAbs(seat, rel){
   return rel;
 }
 
+// コマンド先頭の別名を最長一致で拾って {cmd, rest} を返す
+function extractCmdAndRest(raw){
+  const s = String(raw || "");
+  const lower = s.toLowerCase();
+  // KEYを長い順に（「トムヤムクン」より「トムヤ」が先に当たらないように）
+  const keys = Object.keys(COMMAND_ALIASES).sort((a,b)=> b.length - a.length);
+  for (const k of keys){
+    if (lower.startsWith(k.toLowerCase())){
+      return { cmd: COMMAND_ALIASES[k], rest: s.slice(k.length) };
+    }
+  }
+  throw new Error("フザケ テメ"); // 未知コマンド
+}
 
 // "A1うえ" のような連結から [セル, 向き] を推測
 function splitCellAndDir(rem){
@@ -360,11 +373,10 @@ function normalizeTurnIdx(){ // state.turnIdx が空席なら埋まってる席�
 
 
 function snapshot(){
-  normalizeTurnIdx(); // ← ここを足す
   return {
     board: state.board,
     phase: state.phase,
-    turnSeat: peekTurnSeat(),
+    turnSeat: SEAT_ORDER[state.turnIdx] ?? null, // ← peek/normalize 使わない
     arrows: state.arrows,
     reverseActive: state.reverseActive,
     labels: { cols: LABELS.cols, rows: LABELS.rows },
@@ -375,6 +387,18 @@ function snapshot(){
     })),
     logs: state.logs.slice(-30)
   };
+}
+
+
+function maybeStartGame(){
+  if (everyoneSeated() && state.phase === "lobby"){
+    resetBoard();
+    log("— ダラ  (トムヤ オメ) —");
+    logTurnNow(true);
+    broadcastAll({ type:"state", data:snapshot() });
+    return true;
+  }
+  return false;
 }
 
 
@@ -390,14 +414,10 @@ function everyoneSeated(){
 }
 
 function advanceTurn(){
-  // 次の埋まってる席まで回す
-  for (let i=0;i<SEAT_ORDER.length;i++){
-    state.turnIdx = (state.turnIdx + 1) % SEAT_ORDER.length;
-    const s = SEAT_ORDER[state.turnIdx];
-    if (state.players[s]) break;
-  }
+  state.turnIdx = (state.turnIdx + 1) % SEAT_ORDER.length; // 空席でも進めるだけ
   broadcastAll({type:"state", data:snapshot()});
 }
+
 
 function seatToInward(seat){
   // 矢印の進行方向（内側へ）
@@ -581,13 +601,11 @@ function tryAdvancePhase(){
   return changed;
 }
 
-
 function assertTurn(seat){
-  normalizeTurnIdx();
-  const need = peekTurnSeat();
-  if (!need) throw new Error("フザケ ナギ（オマ ヒンン）");
+  const need = SEAT_ORDER[state.turnIdx];
   if (seat !== need) throw new Error(`${seatLabel(need)} オメ ナギ`);
 }
+
 
 
 
@@ -643,35 +661,37 @@ function onCommand(seat, text){
 
  // ===== コマンド解析（スペース有無どちらもOK） =====
   // 先頭からエイリアス最長一致で cmd を取り出し、残りを rest とする
-  const { cmd, rest } = extractCmdAndRest(raw); // 例) "トムヤマーダラバババ" → {cmd:"put", rest:"マーダラバババ"}
+  const { cmd, rest } = extractCmdAndRest(raw);
   let parts = [cmd];
- if (rest && rest.trim()) parts.push(...rest.trim().split(/\s+/)); // 残りを空白で分割して一旦詰める
- // put は「セル+向き」を柔軟に解釈：
- //  - "マーダラバババ"（連結）
- //  - "マー ダラ バババ"（分割）
- //  - "ダラ マー バババ"（行→列の順でもOK）
- if (cmd === "put") {
-   if (parts.length === 2) {
-     // 連結ケース "マーダラバババ" を [セル, 向き] に割る
-     const pr = splitCellAndDir(parts[1]);
-     if (pr) parts = [parts[0], pr[0], pr[1]];
-   } else if (parts.length >= 3) {
-     // 分割ケース："マー ダラ バババ" / "ダラ マー バババ"
-     const merged = parts[1] + parts[2];
-     if (cellToXY(merged)) {
-       const dirStr = parts.slice(3).join("");      // 向きは残りを結合
-       parts = [parts[0], merged, dirStr];
-     } else {
-       // 既に parts[1] が "マーダラ" で、向きが分割されている場合
-       const dirStr = parts.slice(2).join("");
-       parts = [parts[0], parts[1], dirStr];
-     }
-   }
- }
-  
+ if (rest && rest.trim()) parts.push(...rest.trim().split(/\s+/));
 
 
 
+
+function parsePutArgs(rest){
+  const restJoined = (rest || "").replace(/[\s,.\-/_]+/g, ""); // 区切り全削除
+  // 1) まとめてからセル+向きに分割
+  const pr = splitCellAndDir(restJoined);
+  if (pr) return { cellTok: pr[0], dirTok: pr[1] };
+
+  // 2) フォールバック（従来の分割）
+  let parts2 = [];
+  if (rest && rest.trim()) parts2 = rest.trim().split(/\s+/);
+
+  if (parts2.length === 1){
+    const pr2 = splitCellAndDir(parts2[0]);
+    if (pr2) return { cellTok: pr2[0], dirTok: pr2[1] };
+  } else if (parts2.length >= 2){
+    const maybeCell = parts2[0] + parts2[1]; // "マーダラ" or "ダラマー"
+    if (cellToXY(maybeCell)){
+      return { cellTok: maybeCell, dirTok: parts2.slice(2).join("") };
+    } else {
+      const pr3 = splitCellAndDir(parts2[1]);
+      if (pr3) return { cellTok: parts2[0] + pr3[0], dirTok: pr3[1] };
+    }
+  }
+  throw new Error("フザケ べヒュー"); // 解析失敗
+}
 
 
 
@@ -679,71 +699,25 @@ function onCommand(seat, text){
 
 
 if (cmd === "put") {
-  if (!(state.phase === "place1" || state.phase === "place2")) {
-    throw new Error("フザケ プッチョ ナギ");
-  }
+  if (!(state.phase==="place1" || state.phase==="place2")) throw new Error("フザケ プッチョ ナギ");
   assertTurn(seat);
 
-  // === ここがポイント ===
-  // cmd以降（rest部分）を全部つなげてから「セル＋向き」を切り出す
-  // 例:
-  //  - "マー ダラ ばーさ"      → "マーダラばーさ"
-  //  - "マー ダラばーさ"        → "マーダラばーさ"
-  //  - "マーダラ ばーさ"        → "マーダラばーさ"
-  //  - "ダラ マー ばーさ"       → "ダラマーばーさ"（cellToXYは行→列も対応）
-  const restJoined = (rest || "").replace(/[\s,.\-/_]+/g, ""); // 区切りは全部削除
-  let cellTok = null, dirTok = null;
+  const { cellTok, dirTok } = parsePutArgs(rest);
+  const xy  = cellToXY(cellTok);         if (!xy)           throw new Error("フザケ べヒュー");
+  if (state.board[xy.y][xy.x])           throw new Error("フザケ プッチョトムヤ");
 
-  // まずは「全部くっつけた文字列」からセル＋向きに分割を試す
-  const pr = splitCellAndDir(restJoined);
-  if (pr) {
-    [cellTok, dirTok] = pr; // 例: ["マーダラ", "ばーさ"]
-  } else {
-    // 念のためのフォールバック（従来ロジック）
-    let parts2 = [];
-    if (rest && rest.trim()) parts2 = rest.trim().split(/\s+/);
-
-    if (parts2.length === 1) {
-      const pr2 = splitCellAndDir(parts2[0]);
-      if (pr2) [cellTok, dirTok] = pr2;
-    } else if (parts2.length >= 2) {
-      // 「マー ダラ ばーさ」系
-      const maybeCell = parts2[0] + parts2[1]; // "マーダラ" or "ダラマー"
-      if (cellToXY(maybeCell)) {
-        cellTok = maybeCell;
-        dirTok  = parts2.slice(2).join(""); // "ばーさ" など
-      } else {
-        // それでもダメなら「2個目にdirがくっついてる」想定で切ってみる
-        const pr3 = splitCellAndDir(parts2[1]);
-        if (pr3) {
-          cellTok = parts2[0] + pr3[0];   // "マー" + "ダラ" = "マーダラ"
-          dirTok  = pr3[1];               // "ばーさ"
-        }
-      }
-    }
-  }
-
-  // バリデーション
-  const xy = cellToXY(cellTok);
-  if (!xy) throw new Error("フザケ べヒュー");
-
-  if (state.board[xy.y][xy.x]) throw new Error("フザケ プッチョトムヤ");
-
-  const rel = normalizeDir(dirTok);
-  if (!DIR_VECT[rel]) throw new Error("フザケ トムヤ (バババ/パロロ/ヘーネ/バーサ) オメ");
-
-  // 席基準の相対→絶対へ
+  const rel = normalizeDir(dirTok);      if (!DIR_VECT[rel]) throw new Error("フザケ トムヤ (バババ/パロロ/ヘーネ/バーサ) オメ");
   const abs = seatRelToAbs(seat, rel);
 
-  // 置く
   state.board[xy.y][xy.x] = { dir: abs, owner: seat };
   log(`${seatLabel(seat)}: トムヤ ${xyLabel(xy)} ${showRel(rel)}`);
 
   markDone(seat);
   advanceTurn();
-  tryAdvancePhase();
+  if (!tryAdvancePhase()) logTurnNow();  // ← 次の手番ログを即出す
   return;
 }
+
 
 
 if (cmd === "launch")  { handleLaunchCommon(seat, "launch",  parts[1]); return; }
@@ -903,21 +877,9 @@ function hardReset(){
 }
 
 
-function sendSeat(seat,msg){
-  const p = state.players[seat];
-  if (p && p.ws && p.ws.readyState===p.ws.OPEN){ p.ws.send(JSON.stringify(msg)); }
-}
-function extractCmdAndRest(raw){
-  const lower = raw.toLowerCase();
-  for (const alias of Object.keys(COMMAND_ALIASES).sort((a,b)=>b.length-a.length)){
-    if (lower.startsWith(alias.toLowerCase())){
-      return { cmd: COMMAND_ALIASES[alias], rest: raw.slice(alias.length) };
-    }
-  }
-  throw new Error("フザケ テメ");
-}
-
 wss.on("connection", (ws) => {
+  ws.isAlive = true;
+  ws.on("pong", () => (ws.isAlive = true));
   const id = Math.random().toString(36).slice(2,8);
   let mySeat = null;
   let myName = id;
@@ -954,14 +916,35 @@ ws.on("message", (buf)=>{
       return;
     }
 
-    // ゲームだけ最初から（席・スコアは保持）
-    if (m.type === "resetGame") {
-      resetBoard();
-      for (const s of SEATS) if (state.players[s]) state.players[s].score = 0;
-      log("— パオシャーンシャーン —");
-      broadcastAll({type:"state", data:snapshot()});
-      return;
-    }
+if (m.type === "resetGame") {
+  // スコアはリセット（要望通り）
+  for (const s of SEATS) if (state.players[s]) state.players[s].score = 0;
+
+  if (!everyoneSeated()){
+    // ★ 足りてないならロビーに戻って“待つ”
+    state.board = Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
+    state.arrows = {};
+    state.phaseActions = {};
+    state.turnIdx = 0;
+    state.reverseActive = false;
+    state.reverseUsed   = false;
+    state.lastTurnSeat  = null;
+    state.phase = "lobby";
+
+    log("— パオシャーンシャーン —");
+    broadcastAll({type:"state", data:snapshot()});
+    return;
+  }
+
+  // ★ そろってるならそのまま開幕
+  resetBoard(); // place1 へ
+  log("— パオシャーンシャーン —");
+  logTurnNow(true);
+  broadcastAll({type:"state", data:snapshot()});
+  return;
+}
+
+
 
     if (m.type === "name"){
       myName = String(m.name||"").slice(0,20) || myName;
@@ -970,31 +953,54 @@ ws.on("message", (buf)=>{
       return;
     }
 
-    if (m.type === "seat"){
-      const want = resolveSeat(m.seat);
-      if (!SEATS.includes(want)) throw new Error(`オマ ${SEAT_LABELS.N}/${SEAT_LABELS.E}/${SEAT_LABELS.S}/${SEAT_LABELS.W} `);
-      if (seatInUse(want)) throw new Error("フザケ オマ");
-      if (mySeat){ delete state.players[mySeat]; }
-      mySeat = want;
-      state.players[mySeat] = {
-        id,
-        cid: myCid || id,
-        name: myName,
-        ws,
-        score: 0
-      };
-      log(`${SEAT_LABELS[mySeat]}: ${myName} プッチョオマ`);
-      ws.send(JSON.stringify({type:"you", seat: mySeat}));
+if (m.type === "seat"){
+  const want = resolveSeat(m.seat);
+  if (!SEATS.includes(want)) {
+    throw new Error(`オマ ${SEAT_LABELS.N}/${SEAT_LABELS.E}/${SEAT_LABELS.S}/${SEAT_LABELS.W} `);
+  }
 
-      broadcastAll({ type:"state", data: snapshot() });
-      if (everyoneSeated() && state.phase==="lobby"){
-        resetBoard();
-        log("— ダラ  (トムヤ オメ) —");
-        logTurnNow();    
-        broadcastAll({ type:"state", data: snapshot() });
-      }
-      return;
-    }
+  // 既に自分が同じ席にいる → ソケット差し替え＆同期だけ
+  if (mySeat === want && state.players[want]){
+    state.players[want].ws = ws;
+    ws.send(JSON.stringify({ type:"you", seat: mySeat }));
+    broadcastAll({ type:"state", data: snapshot() });
+    maybeStartGame(); // ロビーなら開幕チェック
+    return;
+  }
+
+  // 他人が座ってる席は不可
+  if (seatInUse(want)) throw new Error("フザケ オマ");
+
+  // 別席に座り直しなら古い席を解放
+  if (mySeat){ delete state.players[mySeat]; }
+
+  // 新規着席
+  mySeat = want;
+  state.players[mySeat] = {
+    id,
+    cid: myCid || id,
+    name: myName,
+    ws,
+    score: 0, // 以前の点を引き継ぎたいならここを差し替え
+  };
+
+  log(`${SEAT_LABELS[mySeat]}: ${myName} プッチョオマ`);
+
+  // 自分へ通知＆全員へ最新状態
+  ws.send(JSON.stringify({ type:"you", seat: mySeat }));
+  broadcastAll({ type:"state", data: snapshot() });
+
+  // ロビーなら全員揃った瞬間に開始
+  maybeStartGame();
+
+  // ゲーム中に現在手番の席へ着席してきたら、手番を見える化（任意）
+  if (state.phase !== "lobby" && SEAT_ORDER[state.turnIdx] === mySeat) {
+    logTurnNow(true);
+    broadcastAll({ type:"state", data: snapshot() });
+  }
+  return;
+}
+
 
     if (m.type === "cmd"){
       if (!mySeat) throw new Error("シャーンシャーン オマ オメ");
@@ -1016,27 +1022,29 @@ ws.on("message", (buf)=>{
 
 
 ws.on("close", ()=>{
-  if (!mySeat) return;
-  log(`${seatLabel(mySeat)} (${myName}) ヒンン オマ`);
+    if (!mySeat) return;
+    log(`${seatLabel(mySeat)} (${myName}) ヒンン オマ`);
 
-  // その席に紐づくアクションを掃除（在席者基準にするため）
-  delete state.players[mySeat];
-  delete state.arrows[mySeat];
-  delete state.phaseActions[mySeat];
+    // ★ この3つを確実に消す（座席解放）
+    delete state.players[mySeat];
+    delete state.arrows[mySeat];
+    delete state.phaseActions[mySeat];
 
-  // 今の turnIdx が空席になった場合に備えて正規化
-  normalizeTurnIdx();
+    // ★ 手番は動かさない（待つ）。＝ normalize や空席スキップを呼ばない
+    broadcastAll({type:"state", data:snapshot()});
 
-  broadcastAll({type:"state", data:snapshot()});
-
-  // 参照を消す
-  mySeat = null;
-});
-
-
+    mySeat = null;
+  });
 });//wss.on("connection", ...) を閉じる）
 
 const PORT = process.env.PORT || 8080;
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) return ws.terminate();
+    ws.isAlive = false;
+    try { ws.ping(); } catch {}
+  });
+}, 30000);
 server.listen(PORT, ()=>{
   console.log("listening on http://localhost:"+PORT);
 });

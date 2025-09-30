@@ -164,20 +164,29 @@ function updateTurnPill(snap){
 
 function detectSeatFromText(text){
   try{
-    const SL = (snap && snap.seatLabels) || {N:'N',E:'E',S:'S',W:'W'};
-    const t  = String(text || '');
+    // 制御文字などを軽く除去（必要なら追加）
+    const t = String(text || '').replace(/[\u0000-\u001F\u007F]/g, '');
 
-    // 席行の検出：先頭が「ラベル + （： or : or 空白）」、または「ラベル【ナギ】」
+    const SL = (snap && snap.seatLabels) || {N:'N',E:'E',S:'S',W:'W'};
+
+    // ラベルを正規表現で安全に使えるようエスケープ
+    const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
     for (const s of ['N','E','S','W']){
       const lab = SL[s]; if (!lab) continue;
-      const re = new RegExp(`^${lab}(?:[：:]|\\s)`);
-      if (re.test(t) || t.includes(`${lab}【ナギ】`)){
-        lastSeatForLogs = s;   // 直近席を更新
+
+      // 先頭に「ラベル +（：or: or 空白1個以上）」を許可
+      const reHead = new RegExp(`^${esc(lab)}(?:[：:]|\\s+)`);
+      // 「ラベル + 任意の空白* + 【ナギ】」も許可
+      const reNagi = new RegExp(`${esc(lab)}\\s*【\\s*ナギ\\s*】`);
+
+      if (reHead.test(t) || reNagi.test(t)){
+        lastSeatForLogs = s;
         return s;
       }
     }
 
-    // 継続行：「→ …」は直前の席色を継承
+    // 継続行（→ …）は直前の席色を継承
     if (/^\s*→/.test(t) && lastSeatForLogs) return lastSeatForLogs;
   }catch(_){}
 
@@ -294,36 +303,43 @@ function colorizedOnmyou(color){
      } else if (m.type==='ok' && m.for === 'cmd') {
    const t = document.getElementById('cmd');
    if (t) t.value = '';
-    } else if (m.type==='you'){
-      mySeat = m.seat || null;
-      if (mySeat == null) {
-      document.documentElement.classList.remove('reversed');
-    }
-        render();
-    return;
-      const seatSel = document.querySelector('#seat');
-      const sitBtn  = document.querySelector('#sit');
-      if (mySeat){
-        if (seatSel) seatSel.disabled = true;
-        if (sitBtn)  sitBtn.disabled  = true;
-      } else {
-        if (seatSel) seatSel.disabled = false;
-        if (sitBtn)  sitBtn.disabled  = false;
-        sessionStorage.removeItem('name');
-        sessionStorage.removeItem('myCid');
+    } else if (m.type === 'you') {
+  mySeat = m.seat || null;
+
+  // 反転テーマは未着席なら戻す
+  if (mySeat == null) document.documentElement.classList.remove('reversed');
+
+  // 着席UIの有効/無効を更新（未着席なら選べる）
+  const seatSel = document.querySelector('#seat');
+  const sitBtn  = document.querySelector('#sit');
+  if (seatSel) seatSel.disabled = !!mySeat;
+  if (sitBtn)  sitBtn.disabled  = !!mySeat;
+if (!mySeat){
+    sessionStorage.removeItem('name');
+    sessionStorage.removeItem('myCid');
     const nameEl = document.querySelector('#name');
     if (nameEl) nameEl.value = '';
-      }
-      pendingSeat = null;
-      render();
-    } else if (m.type==='state'){
-  snap = m.data;
-      document.documentElement.classList.toggle('reversed', !!snap.reverseActive);
+  }
   pendingSeat = null;
   render();
+  return;
+} else if (m.type === 'state'){
+  snap = m.data;
+  document.documentElement.classList.toggle('reversed', !!snap.reverseActive);
+  pendingSeat = null;
+
+  // ★ ここで毎回セレクタ本体の有効/無効を同期
+  const seatSel = document.querySelector('#seat');
+  const sitBtn  = document.querySelector('#sit');
+  if (seatSel) seatSel.disabled = !!mySeat;
+  if (sitBtn)  sitBtn.disabled  = !!mySeat;
+
+  render();
   rebuildLogFromSnapshot(snap);
-}else if (m.type==='log'){
-      const el = document.querySelector('#log');
+}
+else if (m.type==='log'){
+ 
+  const el = document.querySelector('#log');
       appendLogLine(m.line);
     // } else if (m.type==='help'){
     //   (m.lines || []).forEach(line => appendLogLine(line));
@@ -332,6 +348,10 @@ function colorizedOnmyou(color){
       animatePath(m);
     } else if (m.type==='error'){
       alert(m.message);
+      if (pendingSeat){
+   disableSeatOption(pendingSeat, false);
+   pendingSeat = null;
+ }
     }
   });
 
