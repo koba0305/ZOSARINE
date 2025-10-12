@@ -1,12 +1,22 @@
 {
-"name": "codex-tiles-mvp",
-"version": "0.1.0",
-"type": "module",
-"scripts": {
-"start": "node server.js"
-},
-"dependencies": {
-"express": "^4.19.2",
-"ws": "^8.18.0"
-}
+  "name": "codex-tiles-mvp",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "main": "._server.js",
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
 }

@@ -2,6 +2,16 @@ import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
 
+import path from "path";
+import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+
+app.use(express.static(path.join(__dirname, "public")));
+app.get("/healthz", (_,res)=>res.send("ok"));
+
+
 const SIZE = 5;
 const SEATS = ["N","E","S","W"];
 const SEAT_ORDER = ["N","E","S","W"];
@@ -376,7 +386,7 @@ function snapshot(){
   return {
     board: state.board,
     phase: state.phase,
-    turnSeat: SEAT_ORDER[state.turnIdx] ?? null, // ← peek/normalize 使わない
+    turnSeat: SEAT_ORDER[state.turnIdx] ?? null,   // ★peek系をやめる
     arrows: state.arrows,
     reverseActive: state.reverseActive,
     labels: { cols: LABELS.cols, rows: LABELS.rows },
@@ -388,6 +398,7 @@ function snapshot(){
     logs: state.logs.slice(-30)
   };
 }
+
 
 
 function maybeStartGame(){
@@ -413,10 +424,12 @@ function everyoneSeated(){
   return SEATS.every(seat => !!state.players[seat]);
 }
 
+// 手番は今のままでOK（空席でも進めるだけ＆そこで待つ）
 function advanceTurn(){
-  state.turnIdx = (state.turnIdx + 1) % SEAT_ORDER.length; // 空席でも進めるだけ
+  state.turnIdx = (state.turnIdx + 1) % SEAT_ORDER.length;
   broadcastAll({type:"state", data:snapshot()});
 }
+
 
 
 function seatToInward(seat){
@@ -876,7 +889,10 @@ function hardReset(){
   state.lastTurnSeat = null;
 }
 
-
+const RECONNECT_GRACE_MS = 15000;//15秒(リロードの時席保持用)
+const ghosts = new Map();
+const CLOSE_GRACE_MS = 4000;             // リロード猶予（お好みで）
+const pendingCloseTimers = new Map();
 wss.on("connection", (ws) => {
   ws.isAlive = true;
   ws.on("pong", () => (ws.isAlive = true));
@@ -884,7 +900,8 @@ wss.on("connection", (ws) => {
   let mySeat = null;
   let myName = id;
   let pendingSeat = null;
-  let myCid = null;  
+  let myCid = null; 
+  let dcTimer = null; 
 
   ws.send(JSON.stringify({type:"state", data:snapshot()}));
   ws.send(JSON.stringify({type:"hello", id}));
@@ -899,22 +916,34 @@ ws.on("message", (buf)=>{
       return;
     }
 
-    // タブ復帰（同じcidなら席を引き継ぐ）
-    if (m.type === "resume") {
-      myCid = String(m.cid || "").slice(0, 64);
-      let found = null;
-      for (const s of SEATS) {
-        const p = state.players[s];
-        if (p && p.cid === myCid) { found = s; break; }
-      }
-      if (found) {
-        mySeat = found;
-        state.players[mySeat].ws = ws; // ソケット差し替え
-        ws.send(JSON.stringify({ type:"you", seat: mySeat }));
-        broadcastAll({ type:"state", data: snapshot() });
-      }
-      return;
-    }
+if (m.type === "resume") {
+  myCid = String(m.cid || "").slice(0, 64);
+
+  // cid で席を探す
+  let found = null;
+  for (const s of SEATS) {
+    const p = state.players[s];
+    if (p && p.cid === myCid) { found = s; break; }
+  }
+
+  if (found) {
+    // ☆ ここでゴーストを解除
+    const g = ghosts.get(myCid);
+    if (g) { clearTimeout(g.timer); ghosts.delete(myCid); }
+
+    // ソケット差し替え
+    mySeat = found;
+    state.players[mySeat].ws = ws;
+
+    ws.send(JSON.stringify({ type:"you", seat: mySeat }));
+    broadcastAll({ type:"state", data: snapshot() });
+  }
+  return;
+}
+
+
+
+
 
 if (m.type === "resetGame") {
   // スコアはリセット（要望通り）
@@ -936,8 +965,7 @@ if (m.type === "resetGame") {
     return;
   }
 
-  // ★ そろってるならそのまま開幕
-  resetBoard(); // place1 へ
+  resetBoard();
   log("— パオシャーンシャーン —");
   logTurnNow(true);
   broadcastAll({type:"state", data:snapshot()});
@@ -959,19 +987,37 @@ if (m.type === "seat"){
     throw new Error(`オマ ${SEAT_LABELS.N}/${SEAT_LABELS.E}/${SEAT_LABELS.S}/${SEAT_LABELS.W} `);
   }
 
-  // 既に自分が同じ席にいる → ソケット差し替え＆同期だけ
   if (mySeat === want && state.players[want]){
     state.players[want].ws = ws;
     ws.send(JSON.stringify({ type:"you", seat: mySeat }));
     broadcastAll({ type:"state", data: snapshot() });
-    maybeStartGame(); // ロビーなら開幕チェック
+    maybeStartGame();
     return;
   }
 
-  // 他人が座ってる席は不可
-  if (seatInUse(want)) throw new Error("フザケ オマ");
+if (seatInUse(want)) {
+ const p = state.players[want];
+ if (!p) throw new Error("フザケ オマ");
+ // 同じ cid なら“座り直し”（ws差し替え）扱い
+ if (p.cid === (myCid || "")) {
+   // 同席再着席（ログは出さず、you/state 同期）
+   mySeat = want;
+   myName = p.name || myName;
+   if (p.dcTimer) { clearTimeout(p.dcTimer); delete p.dcTimer; }
+   p.ws = ws;
+   p.disconnectedAt = null;
+   ws.send(JSON.stringify({type:"you", seat: mySeat}));
+   broadcastAll({ type:"state", data:snapshot() });
+   return;
+ }
 
-  // 別席に座り直しなら古い席を解放
+ if (!p.ws && p.disconnectedAt && Date.now() - p.disconnectedAt < RECONNECT_GRACE_MS) {
+   throw new Error("フザケ オマ（再接続待ち）");
+ }
+
+ throw new Error("フザケ オマ");
+ }
+
   if (mySeat){ delete state.players[mySeat]; }
 
   // 新規着席
@@ -981,19 +1027,15 @@ if (m.type === "seat"){
     cid: myCid || id,
     name: myName,
     ws,
-    score: 0, // 以前の点を引き継ぎたいならここを差し替え
+    score: 0, // 以前の点を引き継ぎたいならここを差し替える
   };
 
   log(`${SEAT_LABELS[mySeat]}: ${myName} プッチョオマ`);
 
-  // 自分へ通知＆全員へ最新状態
   ws.send(JSON.stringify({ type:"you", seat: mySeat }));
   broadcastAll({ type:"state", data: snapshot() });
-
-  // ロビーなら全員揃った瞬間に開始
   maybeStartGame();
 
-  // ゲーム中に現在手番の席へ着席してきたら、手番を見える化（任意）
   if (state.phase !== "lobby" && SEAT_ORDER[state.turnIdx] === mySeat) {
     logTurnNow(true);
     broadcastAll({ type:"state", data: snapshot() });
@@ -1022,21 +1064,37 @@ if (m.type === "seat"){
 
 
 ws.on("close", ()=>{
-    if (!mySeat) return;
-    log(`${seatLabel(mySeat)} (${myName}) ヒンン オマ`);
+  if (!mySeat) return;
 
-    // ★ この3つを確実に消す（座席解放）
-    delete state.players[mySeat];
-    delete state.arrows[mySeat];
-    delete state.phaseActions[mySeat];
+  const seat   = mySeat;
+  const info   = state.players[seat];
+  const oldWs  = info?.ws || ws;
+  const cidKey = info?.cid;
+  const timer = setTimeout(()=>{
+    const stillSame = state.players[seat] && state.players[seat].ws === oldWs;
+    if (stillSame) {
+      const name = state.players[seat]?.name || "";
+      log(`${seatLabel(seat)}: ${name ? name + " " : ""}ヒンン オマ`); // 離席ログ
 
-    // ★ 手番は動かさない（待つ）。＝ normalize や空席スキップを呼ばない
-    broadcastAll({type:"state", data:snapshot()});
+      delete state.players[seat];
+      delete state.arrows[seat];
+      delete state.phaseActions[seat];
 
-    mySeat = null;
-  });
-});//wss.on("connection", ...) を閉じる）
+      broadcastAll({ type:"state", data: snapshot() });
+    }
+    if (cidKey) pendingCloseTimers.delete(cidKey);
+  }, CLOSE_GRACE_MS);
 
+  if (cidKey) pendingCloseTimers.set(cidKey, timer);
+
+  mySeat = null;
+});
+
+
+
+
+
+});
 const PORT = process.env.PORT || 8080;
 setInterval(() => {
   wss.clients.forEach((ws) => {
