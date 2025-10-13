@@ -1,7 +1,9 @@
 {
+    "engines": { "node": "20.x" },
   "name": "codex-tiles-mvp",
   "version": "0.1.0",
   "type": "module",
+  
   "scripts": {
     "start": "node server.js"
   },
@@ -19,4 +21,5 @@
   "author": "",
   "license": "ISC",
   "description": ""
+  
 }

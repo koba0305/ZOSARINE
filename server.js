@@ -5,7 +5,12 @@ import { WebSocketServer } from "ws";
 import path from "path";
 import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname  = path.dirname(__filename);
+
+
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: "/ws" });
 
 
 app.use(express.static(path.join(__dirname, "public")));
@@ -293,10 +298,7 @@ const order = arrowIndicesForSeat(seat); // ← ここがポイント
 }
 
 
-const app = express();
-app.use(express.static("public"));
-const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
+
 
 // ルームは1つだけのMVP
 const state = {
@@ -1095,7 +1097,7 @@ ws.on("close", ()=>{
 
 
 });
-const PORT = process.env.PORT || 8080;
+
 setInterval(() => {
   wss.clients.forEach((ws) => {
     if (!ws.isAlive) return ws.terminate();
@@ -1103,6 +1105,12 @@ setInterval(() => {
     try { ws.ping(); } catch {}
   });
 }, 30000);
-server.listen(PORT, ()=>{
-  console.log("listening on http://localhost:"+PORT);
+
+process.on("unhandledRejection", (e)=>console.error("unhandledRejection:", e));
+process.on("uncaughtException", (e)=>{ console.error("uncaughtException:", e); process.exit(1); });
+
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, () => {
+  console.log("listening on http://localhost:"+PORT, "NODE_ENV=", process.env.NODE_ENV);
 });
+server.on("error", (e)=>console.error("listen error:", e));
