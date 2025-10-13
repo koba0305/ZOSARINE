@@ -3,7 +3,7 @@ const WS_URL =
   (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
 const ws = new WebSocket(WS_URL);
 
-// タブ復帰用のCID（あなたのserverはresume対応済み）
+
 const CID_KEY = "codexTilesCID";
 const cid = localStorage.getItem(CID_KEY) || (crypto.randomUUID?.() || Math.random().toString(36).slice(2));
 localStorage.setItem(CID_KEY, cid);
@@ -11,23 +11,23 @@ localStorage.setItem(CID_KEY, cid);
 let mySeat = null;
 
 ws.addEventListener("open", () => {
-  // 自動着席はしない。状態同期だけ
-  ws.send(JSON.stringify({ type: "resume", cid })); // 復帰（同じブラウザなら席引き継ぎ）
-  ws.send(JSON.stringify({ type: "pull" }));        // 最新state取得
+  
+  ws.send(JSON.stringify({ type: "resume", cid })); 
+  ws.send(JSON.stringify({ type: "pull" }));        
 });
 
 ws.addEventListener("message", (e) => {
   const msg = JSON.parse(e.data);
 
   if (msg.type === "hello") {
-    // 初回IDが来る（必要ならUI表示）
+    
   }
   if (msg.type === "you") {
-    mySeat = msg.seat; // nullなら観戦
+    mySeat = msg.seat; 
     updateYou(mySeat);
   }
   if (msg.type === "state") {
-    render(msg.data);  // 盤・フェーズ・点数など反映
+    render(msg.data);  
   }
   if (msg.type === "log") {
     appendLog(msg.line);
@@ -37,7 +37,6 @@ ws.addEventListener("message", (e) => {
   }
 });
 
-// ===== UIから呼ぶ関数（席はユーザーが選ぶ）=====
 window.chooseSeat = (seat) => {
   if (ws.readyState === 1) ws.send(JSON.stringify({ type: "seat", seat }));
 };
@@ -51,8 +50,77 @@ window.resetGame = () => {
   if (ws.readyState === 1) ws.send(JSON.stringify({ type: "resetGame" }));
 };
 
-// ==== ここはあなたの既存UIに合わせて書き換え ====
-function render(s) { /* ... */ }
-function updateYou(seat) { /* ... */ }
-function appendLog(line) { /* ... */ }
-function showError(msg) { /* ... */ }
+
+(() => {
+  const WS_URL =
+    (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+  const CID_KEY = "codexTilesCID";
+  const cid =
+    localStorage.getItem(CID_KEY) ||
+    (crypto.randomUUID?.() || Math.random().toString(36).slice(2));
+  localStorage.setItem(CID_KEY, cid);
+
+  let ws = null;
+  let backoff = 1000;          
+  const MAX_BACKOFF = 30000;   
+
+  function connect() {
+    console.log("[ws] connecting", WS_URL);
+    ws = new WebSocket(WS_URL);
+
+    ws.addEventListener("open", () => {
+      console.log("[ws] open");
+      backoff = 1000; 
+      ws.send(JSON.stringify({ type: "resume", cid }));
+      ws.send(JSON.stringify({ type: "pull" }));
+    });
+
+    ws.addEventListener("message", (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        console.log("[ws] msg", msg.type, msg);
+      } catch (err) {
+        console.warn("[ws] bad json", err);
+      }
+    });
+
+    ws.addEventListener("close", (e) => {
+      console.warn("[ws] close", e.code, e.reason);
+      scheduleReconnect();
+    });
+
+    ws.addEventListener("error", (e) => {
+      console.warn("[ws] error", e);
+      
+      // try { ws.close(); } catch {}
+    });
+  }
+
+  function scheduleReconnect() {
+    const delay = Math.min(backoff, MAX_BACKOFF);
+    console.log("[ws] reconnect in", delay, "ms");
+    setTimeout(connect, delay);
+    backoff *= 2; 
+  }
+
+  
+  window.chooseSeat = (seat) => {
+    if (!ws || ws.readyState !== 1) return console.warn("[chooseSeat] ws not open");
+    ws.send(JSON.stringify({ type: "seat", seat })); // "N"|"E"|"S"|"W"
+  };
+  window.cmd = (text) => {
+    if (!ws || ws.readyState !== 1) return console.warn("[cmd] ws not open");
+    ws.send(JSON.stringify({ type: "cmd", text }));
+  };
+  window.reset = () => {
+    if (!ws || ws.readyState !== 1) return console.warn("[reset] ws not open");
+    ws.send(JSON.stringify({ type: "reset" }));
+  };
+
+  
+  setInterval(() => {
+    fetch("/healthz", { cache: "no-store" }).catch(() => {});
+  }, 5 * 60 * 1000);
+
+  connect();
+})();

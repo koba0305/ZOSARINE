@@ -22,11 +22,11 @@ const SEATS = ["N","E","S","W"];
 const SEAT_ORDER = ["N","E","S","W"];
 const STEP_LIMIT = 30;
 
-// --- OMA-FUZAKE-N-PAO（誓い） ---
-const OATH_BONUS = 2;          // 象が来た回数 × 追加点
-const OATH_FAIL_PENALTY = -5; // 1回も来なかったら
 
-// --- パオチャンカパーナ（方向反転 & 自動launch） ---
+const OATH_BONUS = 2;         
+const OATH_FAIL_PENALTY = -5; 
+
+
 const REVERSE_ALIASES = new Set(["パオチャンカパーナ","ぱおちゃんかぱーな"]);
 
 
@@ -36,8 +36,8 @@ const OATH_ALIASES = new Set([
 ]);
 const VOW2X_ALIASES = new Set(["ププアププア","ぷぷあぷぷあ"]);
 
-// ====== 可変語彙テーブル（ここだけ書き換えればOK） ======
-// 盤ラベル（表示＆入力の正準）
+
+
 const LABELS = {
   cols: ["マー","イヒ","ツ","レー","ソ"],
   rows: ["ダラ","ギッ","グウ","デベ","ドオ"],
@@ -51,14 +51,14 @@ LABELS.row_alias = {
   "だら":"ダラ","ぎっ":"ギッ","ぐう":"グウ","でべ":"デベ","どお":"ドオ"
 };
 
-// 席ラベル（表示用）
+
 const SEAT_LABELS = { N:"ウホ", E:"イザ", S:"ンマ", W:"ウット" };
-const SEAT_ALIASES = { n:"N", 北:"N", e:"E", 東:"E", s:"S", 南:"S", w:"W", 西:"W" }; // 入力→正準
+const SEAT_ALIASES = { n:"N", 北:"N", e:"E", 東:"E", s:"S", 南:"S", w:"W", 西:"W" }; 
 SEAT_ALIASES[SEAT_LABELS.N] = "N";
 SEAT_ALIASES[SEAT_LABELS.E] = "E";
 SEAT_ALIASES[SEAT_LABELS.S] = "S";
 SEAT_ALIASES[SEAT_LABELS.W] = "W";
-// コマンド引数の別名（無ければ空でOK）
+
 const ARG_ALIASES = {
    launch:  { "パオ ムクン": "pass", "パオムクン":"pass", "ぱお むくん":"pass", "ぱおむくん":"pass"  },
    launch2: { "プア ムクン": "pass", "プアムクン":"pass", "ぷあ むくん":"pass", "ぷあむくん":"pass" },
@@ -79,12 +79,12 @@ function resolveSeat(tok){
   if (["N","E","S","W"].includes(v)) return v;
   throw new Error(`オマ ${SEAT_LABELS.N}/${SEAT_LABELS.E}/${SEAT_LABELS.S}/${SEAT_LABELS.W} オメ`);
 }
-function seatLabel(s){ return SEAT_LABELS[s] || s; } // ← 表示用ユーティリティ
+function seatLabel(s){ return SEAT_LABELS[s] || s; } 
 
 
 
 
-// コマの向き（put用）: 上下左右の別名 → "up|down|left|right"（※矢印とは別テーブル）
+
 const DIR_ALIASES = {
   "バババ":"up",   "ばばば":"up",  
   "パロロ":"down", "ぱろろ":"down",
@@ -94,13 +94,13 @@ const DIR_ALIASES = {
 
 const REL_LABELS = { up:"バババ", down:"パロロ", right:"ヘーネ", left:"バーサ" };
 function showRel(rel){ return REL_LABELS[rel] || rel; }
-// 表示用：正規方向 → あなたの語彙（例: up→バババ）
+
 const DIR_LABELS = (() => {
   const out = {};
   for (const [alias, canon] of Object.entries(DIR_ALIASES)) {
-    if (!(canon in out)) out[canon] = alias; // 最初に見つけた別名を採用
+    if (!(canon in out)) out[canon] = alias; 
   }
-  // 保険（未定義でも落ちないように）
+  
   out.up    = out.up    || "up";
   out.down  = out.down  || "down";
   out.left  = out.left  || "left";
@@ -110,7 +110,7 @@ const DIR_LABELS = (() => {
 function showDir(dir){ return DIR_LABELS[dir] || dir; }
 
 
-// 矢印フェーズの三択（※方向語彙とは別！）
+
 const ARROW_CHOICES = {
   "バサシバサシ":"left",  "ばさしばさし":"left",
   "チョボ":"center",      "ちょぼ":"center",
@@ -122,7 +122,7 @@ const COMMAND_ALIASES = {
   "プア":"launch2",    "ぷあ":"launch2",
 
   "トムヤ":"put",   "とむや":"put",
- // "プッチョ":"put",   "ぷっちょ":"put",
+ 
   "ペピピ":"pickup",   "ぺぴぴ":"pickup",
   "チャン":"arrow",    "ちゃん":"arrow",
 
@@ -140,28 +140,28 @@ function seatRelToAbs(seat, rel){
   return rel;
 }
 
-// コマンド先頭の別名を最長一致で拾って {cmd, rest} を返す
+
 function extractCmdAndRest(raw){
   const s = String(raw || "");
   const lower = s.toLowerCase();
-  // KEYを長い順に（「トムヤムクン」より「トムヤ」が先に当たらないように）
+  
   const keys = Object.keys(COMMAND_ALIASES).sort((a,b)=> b.length - a.length);
   for (const k of keys){
     if (lower.startsWith(k.toLowerCase())){
       return { cmd: COMMAND_ALIASES[k], rest: s.slice(k.length) };
     }
   }
-  throw new Error("フザケ テメ"); // 未知コマンド
+  throw new Error("フザケ テメ"); 
 }
 
-// "A1うえ" のような連結から [セル, 向き] を推測
+
 function splitCellAndDir(rem){
   if (!rem) return null;
-  // 区切りが入っていたら最初をセル、残りを向き扱い
+  
   const sp = rem.split(/[\s,.\-_/]+/).filter(Boolean);
   if (sp.length >= 2) return [sp[0], sp.slice(1).join("")];
 
-  // 全ての切れ目を試して、前半がセル・後半が向きになれば採用
+  
   for (let i = rem.length; i >= 1; i--){
     const c = rem.slice(0, i);
     const d = rem.slice(i);
@@ -173,18 +173,18 @@ function splitCellAndDir(rem){
 }
 
 
-// 正規化ヘルパ
+
 function norm(s){ return String(s||"").trim().toLowerCase(); }
 function resolveCommand(tok){
   const k = norm(tok);
   const v = COMMAND_ALIASES[k];
- if (!v) throw new Error("フザケ テメ（未知のコマンド）"); // 日本語/カタカナ以外は不許可
+ if (!v) throw new Error("フザケ テメ（未知のコマンド）"); 
  return v;
 }
 function resolveArg(cmd, tok){
 if (!tok) return "";
  const tbl = ARG_ALIASES[cmd];
-  if (!tbl) return null;          // テーブル未定義なら何も許可しない（英語pass等を弾く）
+  if (!tbl) return null;          
   const v = tbl[norm(tok)];
   return v || null; 
 }
@@ -193,22 +193,22 @@ if (!tok) return "";
 const DIR_VECT = {
   up:{dx:0,dy:-1}, down:{dx:0,dy:1}, left:{dx:-1,dy:0}, right:{dx:1,dy:0}
 };
-// 入力語をインデックスへ変換するためのマップを構築
+
 const COL_MAP = Object.create(null);
 const ROW_MAP = Object.create(null);
 
 function normKey(s){ return String(s||"").trim().toLowerCase(); }
 
 function rebuildLabelMaps(){
-  // いったん空に
+  
   for (const k in COL_MAP) delete COL_MAP[k];
   for (const k in ROW_MAP) delete ROW_MAP[k];
 
-  // 正準ラベル
+  
   LABELS.cols.forEach((lab, i)=>{ COL_MAP[normKey(lab)] = i; });
   LABELS.rows.forEach((lab, i)=>{ ROW_MAP[normKey(lab)] = i; });
 
-  // 別名
+  
   Object.entries(LABELS.col_alias || {}).forEach(([alias, canon])=>{
     const i = LABELS.cols.indexOf(canon); if (i>=0) COL_MAP[normKey(alias)] = i;
   });
@@ -219,17 +219,17 @@ function rebuildLabelMaps(){
 
 rebuildLabelMaps();
 
-// 「A1」「甲三」「A-1」「A 1」「x,y（数値）」などを許容
-// 「マー ダラ」「ダラ マー」「マーダラ」「ダラマー」「A1」「1A」「2,3」などを許容
-// 「まー だら」「だら まー」「マーダラ」「ダラマー」等を許容（A1/1Aは不可）
+
+
+
 function cellToXY(tok){
   const raw = String(tok||"").trim();
   if (!raw) return null;
 
-  // 小文字化（日本語はそのままだけど揃えておく）
+  
   const s = raw.toLowerCase();
 
-  // 1) 区切りあり（スペース/カンマ/ドット/ハイフン/スラ/アンダー）
+  
   const sp = s.split(/[\s,.\-/_]+/).filter(Boolean);
   if (sp.length === 2){
     const [a,b] = sp;
@@ -239,7 +239,7 @@ function cellToXY(tok){
     if (a in ROW_MAP && b in COL_MAP) return {x: COL_MAP[b], y: ROW_MAP[a]};
   }
 
-  // 2) 連結（マーダラ／ダラマー）
+  
   const colKeys = Object.keys(COL_MAP).sort((x,y)=> y.length - x.length);
   const rowKeys = Object.keys(ROW_MAP).sort((x,y)=> y.length - x.length);
 
@@ -261,36 +261,36 @@ function cellToXY(tok){
   return null;
 }
 
-// 盤上座標 → ラベル文字列（ログ用）
+
 function xyLabel({x,y}){ return `${LABELS.cols[x]}${LABELS.rows[y]}`; }
 
-// 方向：別名を正規化
+
 function normalizeDir(tok){
   const k = String(tok||"").trim().toLowerCase();
-  return DIR_ALIASES[k] || null; // 未登録は不許可
+  return DIR_ALIASES[k] || null; 
 }
 
 
 
-const EDGE = [0,2,4];                      // 左/中/右 のインデックス
+const EDGE = [0,2,4];                      
 const ARW_INDEX = {left:0, center:1, right:2};
-// 自分の辺を“内向きに見たとき”の左→右の順序
+
 function arrowIndicesForSeat(seat){
-  // 0,2,4 は盤面座標の並び。N/E は逆、S/W はそのまま
-  if (seat === "N") return [4,2,0]; // 上辺：右→中→左（内向きに見た左が盤面右端）
-  if (seat === "S") return [0,2,4]; // 下辺：左→中→右
-  if (seat === "W") return [0,2,4]; // 左辺：上→中→下
-  if (seat === "E") return [4,2,0]; // 右辺：下→中→上
+  
+  if (seat === "N") return [4,2,0]; 
+  if (seat === "S") return [0,2,4]; 
+  if (seat === "W") return [0,2,4]; 
+  if (seat === "E") return [4,2,0]; 
   return [0,2,4];
 }
 
 function arrowXYFor(seat, tok){
   const key0 = String(tok||"").trim().toLowerCase();
-  const key  = ARROW_CHOICES[key0];           // 日本語エイリアスのみ
+  const key  = ARROW_CHOICES[key0];           
  if (!key) return null;
  const i = ARW_INDEX[key];
   if (i == null) return null;
-const order = arrowIndicesForSeat(seat); // ← ここがポイント
+const order = arrowIndicesForSeat(seat); 
  if (seat==="N") return {x:order[i], y:0};
  if (seat==="S") return {x:order[i], y:SIZE-1};
  if (seat==="W") return {x:0,        y:order[i]};
@@ -300,7 +300,7 @@ const order = arrowIndicesForSeat(seat); // ← ここがポイント
 
 
 
-// ルームは1つだけのMVP
+
 const state = {
   board: Array.from({ length: SIZE }, () => Array(SIZE).fill(null)),
   players: {},
@@ -311,8 +311,8 @@ const state = {
   phaseActions: {},
   oath: {},
   vow2x: {},
-  reverseActive: false, // 反転中か
- reverseUsed: false,   // 今ゲームで既に使ったか
+  reverseActive: false, 
+ reverseUsed: false,   
  lastTurnSeat: null,
 };
 
@@ -320,7 +320,7 @@ function resetBoard() {
   state.board = Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
   state.arrows = {};
   state.phase = "place1";
-  // state.logs = state.logs.slice(-200);
+  
   state.turnIdx = 0;
   state.phaseActions = {};
   state.lastTurnSeat = null;
@@ -333,7 +333,7 @@ function resetBoard() {
 function currentTurnSeat(){ return SEAT_ORDER[state.turnIdx]; }
 function logTurnNow(force = false){
   const seat = currentTurnSeat();
-  if (!force && state.lastTurnSeat === seat) return; // 同じ席なら二重ログを抑止
+  if (!force && state.lastTurnSeat === seat) return; 
   state.lastTurnSeat = seat;
   log(`${seatLabel(seat)}【ナギ】`);
 }
@@ -341,7 +341,7 @@ function logTurnNow(force = false){
 
 
 
-// すべての接続へ（ロビー表示更新・着席ログ・リセットの通知はこっち）
+
 function broadcastAll(msg){
   const s = JSON.stringify(msg);
   for (const client of wss.clients){
@@ -351,7 +351,7 @@ function broadcastAll(msg){
   }
 }
 
-// 着席済みプレイヤーだけへ（パス/置き/発進などゲーム内の細かい更新に使う）
+
 // function broadcastPlayers(msg){
 //   const s = JSON.stringify(msg);
 //   for (const seat of SEATS){
@@ -364,18 +364,18 @@ function broadcastAll(msg){
 
 
 
-// === 追加：在席者・手番関連ユーティリティ ===
+
 function seatedSeats(){
   return SEATS.filter(s => !!state.players[s]);
 }
-function peekTurnSeat(){ // stateを変えずに「次に動くべき席」を見る
+function peekTurnSeat(){ 
   for (let k=0;k<SEAT_ORDER.length;k++){
     const s = SEAT_ORDER[(state.turnIdx + k) % SEAT_ORDER.length];
     if (state.players[s]) return s;
   }
-  return null; // 誰もいない
+  return null; 
 }
-function normalizeTurnIdx(){ // state.turnIdx が空席なら埋まってる席まで進める
+function normalizeTurnIdx(){ 
   for (let k=0;k<SEAT_ORDER.length;k++){
     const s = SEAT_ORDER[state.turnIdx];
     if (state.players[s]) return;
@@ -388,7 +388,7 @@ function snapshot(){
   return {
     board: state.board,
     phase: state.phase,
-    turnSeat: SEAT_ORDER[state.turnIdx] ?? null,   // ★peek系をやめる
+    turnSeat: SEAT_ORDER[state.turnIdx] ?? null,   
     arrows: state.arrows,
     reverseActive: state.reverseActive,
     labels: { cols: LABELS.cols, rows: LABELS.rows },
@@ -426,7 +426,7 @@ function everyoneSeated(){
   return SEATS.every(seat => !!state.players[seat]);
 }
 
-// 手番は今のままでOK（空席でも進めるだけ＆そこで待つ）
+
 function advanceTurn(){
   state.turnIdx = (state.turnIdx + 1) % SEAT_ORDER.length;
   broadcastAll({type:"state", data:snapshot()});
@@ -435,7 +435,7 @@ function advanceTurn(){
 
 
 function seatToInward(seat){
-  // 矢印の進行方向（内側へ）
+  
   if (seat==="N") return DIR_VECT.down;
   if (seat==="S") return DIR_VECT.up;
   if (seat==="E") return DIR_VECT.left;
@@ -459,7 +459,7 @@ function exitSeatForOutOfBounds(x,y){
 }
 
 function tryReverseDeclaration(seat, text){
-  const joined = String(text||"").replace(/[!\s]+/g,'').toLowerCase(); // !と空白を除去
+  const joined = String(text||"").replace(/[!\s]+/g,'').toLowerCase(); 
   if (!REVERSE_ALIASES.has(joined)) return false;
   if (state.phase !== "launch") throw new Error("フザケ パオチャンカパーナ ナギ");
   if (state.reverseUsed)        throw new Error("フザケ ギッ パオチャンカパーナ");
@@ -469,12 +469,12 @@ function tryReverseDeclaration(seat, text){
   log(`${seatLabel(seat)}: パオチャンカパーナ !!!!!`);
   broadcastAll({ type:"state", data:snapshot() });
 
-  // ★ 一呼吸（1秒）置いてから自動でパオ
+  
   setTimeout(()=>{
     try{
       handleLaunchCommon(seat, "launch");
     }catch(e){
-      // 万一のエラーも通知（落ちないように）
+      
       const msg = String(e && e.message || e);
       if (state.players[seat]?.ws){
         state.players[seat].ws.send(JSON.stringify({type:"error", message: msg}));
@@ -485,100 +485,85 @@ function tryReverseDeclaration(seat, text){
   return true;
 }
 
-
-// 既存の traceAnimal(seat) を丸ごと置き換え
 function traceAnimal(seat, mode = "launch") {
   const start = state.arrows[seat];
   if (!start) return { path: [], exit: "none", bends: 0, reason: "no_start" };
 
   let { dx, dy } = seatToInward(seat);
-  // まず矢印が刺さっているセル(=start)に駒があるなら、そこで向きを変える
-  // その後に一歩進む、という順序に変更
-  let x = start.x;
-  let y = start.y;
+  let x = start.x, y = start.y;
 
-  const seenStates = new Set(); // ループ検出
-  const usedColors = new Set(); // launch2: 同じ色は2回目以降は無視
+  const seenStates = new Set();
   const path = [];
   let bends = 0;
-// ★ 最初に「矢印セル上のコマ」を評価
-  const under = state.board[y]?.[x];
-  if (under) {
-    let v = DIR_VECT[under.dir];
-    if (state.reverseActive) v = { dx: -v.dx, dy: -v.dy };
-    if (mode === "launch2") {
-      if (!usedColors.has(under.owner)) {
-        if (v.dx !== dx || v.dy !== dy) bends++;
-        dx = v.dx; dy = v.dy;
-        usedColors.add(under.owner);
-      }
-    } else {
+
+  
+  
+  
+  {
+    const under = state.board[y]?.[x];
+    if (under) {
+      let v = DIR_VECT[under.dir];
+      if (state.reverseActive) v = { dx: -v.dx, dy: -v.dy };
       if (v.dx !== dx || v.dy !== dy) bends++;
       dx = v.dx; dy = v.dy;
     }
   }
-  // 矢印セルでの向き確定後、最初の一歩を踏み出す
+
+  
   x += dx; y += dy;
-  for (let step = 0; step < STEP_LIMIT; step++) {
-    // 盤外に出た＝どの辺から出たかで得点計算
+
+  
+  for (let stepIdx = 1; stepIdx <= STEP_LIMIT; stepIdx++) {
+    
     if (x < 0 || x >= SIZE || y < 0 || y >= SIZE) {
-      const out = exitSeatForOutOfBounds(x, y); // "N"|"E"|"S"|"W"
+      const out = exitSeatForOutOfBounds(x, y);
       return { path, exit: out, bends, reason: "exit" };
     }
 
     path.push({ x, y });
 
-    // コマで曲がる処理
     const cell = state.board[y][x]; // {dir, owner}
     if (cell) {
-      // launch2 では「初めての色」だけ効く
       if (mode === "launch2") {
-        if (!usedColors.has(cell.owner)) {
+        if (stepIdx % 2 === 0) {
           let v = DIR_VECT[cell.dir];
-     if (state.reverseActive) v = { dx: -v.dx, dy: -v.dy }; //反転
-          // 実際に向きが変わったらカウント
+          if (state.reverseActive) v = { dx: -v.dx, dy: -v.dy };
           if (v.dx !== dx || v.dy !== dy) bends++;
           dx = v.dx; dy = v.dy;
-          usedColors.add(cell.owner);
         }
       } else {
-        // 通常 launch：毎回そのコマの向きに従う
         let v = DIR_VECT[cell.dir];
-     if (state.reverseActive) v = { dx: -v.dx, dy: -v.dy }; //反転
+        if (state.reverseActive) v = { dx: -v.dx, dy: -v.dy };
         if (v.dx !== dx || v.dy !== dy) bends++;
         dx = v.dx; dy = v.dy;
       }
     }
 
-    // ループ検出（位置＋向きの再訪）
     const key = `${x},${y},${dx},${dy}`;
     if (seenStates.has(key)) {
       return { path, exit: "loop", bends, reason: "cycle" };
     }
     seenStates.add(key);
 
-    // 次のマスへ
     x += dx; y += dy;
   }
 
-  // STEP_LIMIT に達した＝帰ってこれなかった → ループ扱い
   return { path, exit: "loop", bends, reason: "step_limit" };
 }
 
 
-
 function allTurnsDoneForPhase(targetPhase){
-  // place1/place2 は盤面の置かれた個数で判断、arrow は arrows 数、launch は順次実行
+  
   if (targetPhase==="place1"){
     let count=0; for (let y=0;y<SIZE;y++) for (let x=0;x<SIZE;x++) if (state.board[y][x]) count++;
-    return count>=4; // 各席1個
+    return count>=4; 
   }
   if (targetPhase==="arrow"){
     return SEATS.every(seat=>!!state.players[seat]) && Object.keys(state.arrows).length>=4;
   }
   if (targetPhase==="place2"){
     let count=0; for (let y=0;y<SIZE;y++) for (let x=0;x<SIZE;x++) if (state.board[y][x]) count++;
-    return count>=8; // 合計8個になっていればOK
+    return count>=8; 
   }
   return false;
 }
@@ -599,7 +584,7 @@ function tryAdvancePhase(){
     changed = true;
   } else if (state.phase==="arrow"){
     const seated = seatedSeats();
-    const allSet = seated.length>0 && seated.every(s => !!state.arrows[s]); // ← 変更
+    const allSet = seated.length>0 && seated.every(s => !!state.arrows[s]); 
     if (allSet){
       state.phase = "place2"; state.turnIdx = 0; state.phaseActions = {};
       log("— グウ  (トムヤ オメ) —");
@@ -628,10 +613,10 @@ function onCommand(seat, text){
 
   const raw = String(text||"").trim();
 
-// 先に「パオチャンカパーナ」だけ特別処理（1秒待って自動パオ）
+
  if (tryReverseDeclaration(seat, text)) return;
 
-  // === 誓い：オマ フザケ ン パオ（スペース/大小/かな無視） ===
+  
   {
     const joined = raw.replace(/\s+/g, '').toLowerCase();
     if (OATH_ALIASES.has(joined)) {
@@ -645,7 +630,7 @@ function onCommand(seat, text){
       return;
     }
   }
-    // === ププアププア（スペース無視・ひらがなOK） ===
+    
   {
     const joined = String(text||"").replace(/\s+/g,'').toLowerCase();
     if (VOW2X_ALIASES.has(joined)) {
@@ -658,7 +643,7 @@ function onCommand(seat, text){
       return;
     }
   }
-// === 置きフェーズ・パス：トムヤ ムクン（or ムクン単独） ===
+
 {
   const joined = raw.replace(/\s+/g, '').toLowerCase();
   if (PLACE_PASS_ALIASES.has(joined)) {
@@ -674,8 +659,8 @@ function onCommand(seat, text){
 }
 
 
- // ===== コマンド解析（スペース有無どちらもOK） =====
-  // 先頭からエイリアス最長一致で cmd を取り出し、残りを rest とする
+ 
+  
   const { cmd, rest } = extractCmdAndRest(raw);
   let parts = [cmd];
  if (rest && rest.trim()) parts.push(...rest.trim().split(/\s+/));
@@ -684,12 +669,12 @@ function onCommand(seat, text){
 
 
 function parsePutArgs(rest){
-  const restJoined = (rest || "").replace(/[\s,.\-/_]+/g, ""); // 区切り全削除
-  // 1) まとめてからセル+向きに分割
+  const restJoined = (rest || "").replace(/[\s,.\-/_]+/g, ""); 
+  
   const pr = splitCellAndDir(restJoined);
   if (pr) return { cellTok: pr[0], dirTok: pr[1] };
 
-  // 2) フォールバック（従来の分割）
+  
   let parts2 = [];
   if (rest && rest.trim()) parts2 = rest.trim().split(/\s+/);
 
@@ -697,7 +682,7 @@ function parsePutArgs(rest){
     const pr2 = splitCellAndDir(parts2[0]);
     if (pr2) return { cellTok: pr2[0], dirTok: pr2[1] };
   } else if (parts2.length >= 2){
-    const maybeCell = parts2[0] + parts2[1]; // "マーダラ" or "ダラマー"
+    const maybeCell = parts2[0] + parts2[1]; 
     if (cellToXY(maybeCell)){
       return { cellTok: maybeCell, dirTok: parts2.slice(2).join("") };
     } else {
@@ -705,7 +690,7 @@ function parsePutArgs(rest){
       if (pr3) return { cellTok: parts2[0] + pr3[0], dirTok: pr3[1] };
     }
   }
-  throw new Error("フザケ べヒュー"); // 解析失敗
+  throw new Error("フザケ べヒュー"); 
 }
 
 
@@ -729,7 +714,7 @@ if (cmd === "put") {
 
   markDone(seat);
   advanceTurn();
-  if (!tryAdvancePhase()) logTurnNow();  // ← 次の手番ログを即出す
+  if (!tryAdvancePhase()) logTurnNow();  
   return;
 }
 
@@ -748,7 +733,7 @@ if (cmd === "launch2") { handleLaunchCommon(seat, "launch2", parts[1]); return; 
   if (c.owner !== seat) throw new Error("フザケ オマ トムヤ ムクン オメ");
   state.board[xy.y][xy.x] = null;
   log(`${seatLabel(seat)}: ペピピ ${parts[1].toUpperCase()}`);
-  markDone(seat);               // ← 回収も1手としてカウント
+  markDone(seat);               
   advanceTurn();
   if (!tryAdvancePhase()) logTurnNow();
   return;
@@ -772,18 +757,18 @@ if (cmd==="arrow"){
   return;
 }
 
-  throw new Error("フザケ テメ"); // 未知コマンド
+  throw new Error("フザケ テメ"); 
 }
-function handleLaunchCommon(seat, mode, arg){ // mode: "launch" | "launch2"
+function handleLaunchCommon(seat, mode, arg){ 
   if (state.phase !== "launch") throw new Error("フザケ パオ ナギ");
   assertTurn(seat);
 
-  // 見出しログ
+  
   log(`—(${mode==="launch" ? "パオ" : "プア"} オメ) —`);
   log(`${seatLabel(seat)}【ナギ】`);
   log(`${seatLabel(seat)}: ${mode==="launch" ? "パオ" : "プア"}`);
 
-  // 1) pass はここで処理して終了
+  
   const a = resolveArg(mode, arg);
   if (a === "pass") {
     log(`${seatLabel(seat)}: ${mode==="launch" ? "パオ" : "プア"} ムクン`);
@@ -802,18 +787,18 @@ function handleLaunchCommon(seat, mode, arg){ // mode: "launch" | "launch2"
     return;
   }
 
-  // 2) ププアププア中はパオ禁止
+  
   if (mode === "launch" && state.vow2x[seat]?.active) {
     throw new Error("フザケ パオ : ププアププア ナギ");
   }
 
-  // 3) pass 以外の余計な引数は不許可（許したいならここを緩める）
+  
   if (arg) throw new Error("フザケ オマパトゥ");
 
-  // 4) 矢印未設定
+  
   if (!state.arrows[seat]) throw new Error("フザケ チャン オメ");
 
-  // 本処理
+  
   const { path, exit, bends } = traceAnimal(seat, mode);
 
   let delta = 0;
@@ -821,7 +806,7 @@ function handleLaunchCommon(seat, mode, arg){ // mode: "launch" | "launch2"
   else if (exit === seat)    delta = bends + 1;
   else if (["N","E","S","W"].includes(exit)) delta = -bends;
 
-  // ププアププア：プアなら最終delta×2
+  
   if (mode === "launch2" && state.vow2x[seat]?.active) {
     delta *= 2;
     log(`${seatLabel(seat)}: ププアププア イヒ`);
@@ -833,10 +818,10 @@ function handleLaunchCommon(seat, mode, arg){ // mode: "launch" | "launch2"
   const showExit = (ex)=> ex === "loop" ? "チキン" : (seatLabel(ex) || ex);
   log(`→ ${showExit(exit)} トムヤ${bends} ゾーサン${delta}`);
 
-  // パス描画用イベント
+  
   broadcastAll({ type: "path", seat, path, exit, scoreDelta: delta, bends, mode });
 
-  // 誓いボーナス
+  
   if (["N","E","S","W"].includes(exit)) {
     const o = state.oath[exit];
     if (o && o.active) {
@@ -846,7 +831,7 @@ function handleLaunchCommon(seat, mode, arg){ // mode: "launch" | "launch2"
     }
   }
 
-  // 次手番へ
+  
   advanceTurn();
   if (state.turnIdx === 0){
     for (const s of SEATS){
@@ -865,7 +850,7 @@ function handleLaunchCommon(seat, mode, arg){ // mode: "launch" | "launch2"
     logTurnNow();
   }
 
-  // ← ここも broadcastAll に統一
+  
   broadcastAll({ type:"state", data:snapshot() });
 }
 
@@ -881,7 +866,7 @@ function hardReset(){
   state.phaseActions = {};
   state.players = {};
 
-  // ★ 反転系も確実に戻す
+  
   state.reverseActive = false;
   state.reverseUsed   = false;
 
@@ -891,9 +876,9 @@ function hardReset(){
   state.lastTurnSeat = null;
 }
 
-const RECONNECT_GRACE_MS = 15000;//15秒(リロードの時席保持用)
+const RECONNECT_GRACE_MS = 15000;
 const ghosts = new Map();
-const CLOSE_GRACE_MS = 4000;             // リロード猶予（お好みで）
+const CLOSE_GRACE_MS = 4000;             
 const pendingCloseTimers = new Map();
 wss.on("connection", (ws) => {
   ws.isAlive = true;
@@ -912,7 +897,7 @@ ws.on("message", (buf)=>{
   try{
     const m = JSON.parse(buf.toString());
 
-    // フォールバック同期（ロビー監視などからの pull）
+    
     if (m.type === "pull") {
       ws.send(JSON.stringify({ type: "state", data: snapshot() }));
       return;
@@ -921,7 +906,7 @@ ws.on("message", (buf)=>{
 if (m.type === "resume") {
   myCid = String(m.cid || "").slice(0, 64);
 
-  // cid で席を探す
+  
   let found = null;
   for (const s of SEATS) {
     const p = state.players[s];
@@ -929,11 +914,11 @@ if (m.type === "resume") {
   }
 
   if (found) {
-    // ☆ ここでゴーストを解除
+    
     const g = ghosts.get(myCid);
     if (g) { clearTimeout(g.timer); ghosts.delete(myCid); }
 
-    // ソケット差し替え
+    
     mySeat = found;
     state.players[mySeat].ws = ws;
 
@@ -948,11 +933,11 @@ if (m.type === "resume") {
 
 
 if (m.type === "resetGame") {
-  // スコアはリセット（要望通り）
+  
   for (const s of SEATS) if (state.players[s]) state.players[s].score = 0;
 
   if (!everyoneSeated()){
-    // ★ 足りてないならロビーに戻って“待つ”
+    
     state.board = Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
     state.arrows = {};
     state.phaseActions = {};
@@ -1000,9 +985,9 @@ if (m.type === "seat"){
 if (seatInUse(want)) {
  const p = state.players[want];
  if (!p) throw new Error("フザケ オマ");
- // 同じ cid なら“座り直し”（ws差し替え）扱い
+ 
  if (p.cid === (myCid || "")) {
-   // 同席再着席（ログは出さず、you/state 同期）
+   
    mySeat = want;
    myName = p.name || myName;
    if (p.dcTimer) { clearTimeout(p.dcTimer); delete p.dcTimer; }
@@ -1022,14 +1007,14 @@ if (seatInUse(want)) {
 
   if (mySeat){ delete state.players[mySeat]; }
 
-  // 新規着席
+  
   mySeat = want;
   state.players[mySeat] = {
     id,
     cid: myCid || id,
     name: myName,
     ws,
-    score: 0, // 以前の点を引き継ぎたいならここを差し替える
+    score: 0, 
   };
 
   log(`${SEAT_LABELS[mySeat]}: ${myName} プッチョオマ`);
@@ -1054,7 +1039,7 @@ if (seatInUse(want)) {
 }
 
     if (m.type === "reset") {
-      // 席ごと完全リセット（ロビーへ戻る）
+      
       hardReset();
       return;
     }
@@ -1076,7 +1061,7 @@ ws.on("close", ()=>{
     const stillSame = state.players[seat] && state.players[seat].ws === oldWs;
     if (stillSame) {
       const name = state.players[seat]?.name || "";
-      log(`${seatLabel(seat)}: ${name ? name + " " : ""}ヒンン オマ`); // 離席ログ
+      log(`${seatLabel(seat)}: ${name ? name + " " : ""}ヒンン オマ`); 
 
       delete state.players[seat];
       delete state.arrows[seat];

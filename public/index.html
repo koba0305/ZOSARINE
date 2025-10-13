@@ -127,7 +127,7 @@ label{ white-space: nowrap; }           /* ラベルも1行で */
 let pendingSeat = null;
 let lastSeatForLogs = null;
 
-// ここは sessionStorage を使う（localStorage だと新タブでも同一人物になる）
+
 const CID_KEY = 'cid';
 let CID = sessionStorage.getItem(CID_KEY);
 if (!CID) {
@@ -165,20 +165,20 @@ function updateTurnPill(snap){
 
 function detectSeatFromText(text){
   try{
-    // 制御文字などを軽く除去（必要なら追加）
+    
     const t = String(text || '').replace(/[\u0000-\u001F\u007F]/g, '');
 
     const SL = (snap && snap.seatLabels) || {N:'N',E:'E',S:'S',W:'W'};
 
-    // ラベルを正規表現で安全に使えるようエスケープ
+    
     const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     for (const s of ['N','E','S','W']){
       const lab = SL[s]; if (!lab) continue;
 
-      // 先頭に「ラベル +（：or: or 空白1個以上）」を許可
+      
       const reHead = new RegExp(`^${esc(lab)}(?:[：:]|\\s+)`);
-      // 「ラベル + 任意の空白* + 【ナギ】」も許可
+      
       const reNagi = new RegExp(`${esc(lab)}\\s*【\\s*ナギ\\s*】`);
 
       if (reHead.test(t) || reNagi.test(t)){
@@ -187,7 +187,7 @@ function detectSeatFromText(text){
       }
     }
 
-    // 継続行（→ …）は直前の席色を継承
+    
     if (/^\s*→/.test(t) && lastSeatForLogs) return lastSeatForLogs;
   }catch(_){}
 
@@ -202,10 +202,10 @@ function appendLogLine(text, seatCode){
   const el = document.querySelector('#log');
   if (!el) return;
 
-  // 末尾に張り付いている時だけ自動スクロール
+  
   const stick = isPinnedBottom(el);
 
-  const seat = seatCode || detectSeatFromText(text); // ★ ここが肝
+  const seat = seatCode || detectSeatFromText(text); 
   let cls = 'logline';
   if (seat) cls += ` log-seat-${seat}`;
   else if (String(text||'').trim().startsWith('—')) cls += ' sys';
@@ -222,7 +222,7 @@ function appendLogLine(text, seatCode){
 function rebuildLogFromSnapshot(s){
   const el = document.querySelector('#log'); if (!el) return;
   el.innerHTML = '';
-  lastSeatForLogs = null; // ★ ここを追加（継続行の色ズレ防止）
+  lastSeatForLogs = null; 
   (s?.logs || []).forEach(line => appendLogLine(line));
 }
 
@@ -233,8 +233,8 @@ zousanImg.src = 'image/zousan.svg';
 let zousanReady = false;
 zousanImg.onload = ()=>{ zousanReady = true; render(); };
 
-// 色付きバージョンをキャッシュ（席色で着色）
-const zCache = new Map(); // color -> offscreen canvas
+
+const zCache = new Map(); 
 function colorizedZousan(color){
   if (!zousanReady) return null;
   if (zCache.has(color)) return zCache.get(color);
@@ -252,14 +252,14 @@ function colorizedZousan(color){
   return off;
 }
 
-// === Onmyou piece (SVG as piece) ===
+
 const onmyouImg = new Image();
-onmyouImg.src = 'image/onmyou.svg';   // ← ここに置いておく
+onmyouImg.src = 'image/onmyou.svg';   
 let onmyouReady = false;
 onmyouImg.onload = ()=>{ onmyouReady = true; render(); };
 
-// 席色で着色したバリエーションをキャッシュ
-const onCache = new Map(); // color -> offscreen canvas
+
+const onCache = new Map(); 
 function colorizedOnmyou(color){
   if (!onmyouReady) return null;
   if (onCache.has(color)) return onCache.get(color);
@@ -307,18 +307,18 @@ function colorizedOnmyou(color){
 } else if (m.type === 'you') {
   mySeat = m.seat || null;
 
-  // 反転テーマは未着席なら戻す
+  
   if (mySeat == null) document.documentElement.classList.remove('reversed');
 
-  // ★ セレクト本体の enable/disable はココだけで
+  
   const seatSel = document.querySelector('#seat');
   const sitBtn  = document.querySelector('#sit');
   if (seatSel) seatSel.disabled = !!mySeat;
   if (sitBtn)  sitBtn.disabled  = !!mySeat;
 
   if (!mySeat){
-    // 未着席なら入力名などもリセットしてOK
-    // （ここは今のままでOK）
+    
+    
   }
   pendingSeat = null;
   render();
@@ -368,7 +368,7 @@ document.querySelector('#softRestart').onclick = ()=>{
   }
 };
 
-// 既存
+
 document.querySelector('#send').onclick = sendCmd;
 document.querySelector('#restart').onclick = ()=>{
   if (confirm('シャーンシャーン オメ？')){
@@ -389,7 +389,7 @@ document.querySelector('#cmd').addEventListener('keydown', e=>{ if (e.key==='Ent
 const panel = document.querySelector('#right');
 const toggleBtn = document.querySelector('#togglePanel');
 
-// 前回状態を復元
+
 const saved = localStorage.getItem('panelHidden') === '1';
 if (saved) {
   panel.classList.add('hidden');
@@ -398,7 +398,7 @@ if (saved) {
   toggleBtn.textContent = 'フザケ パトゥ';
 }
 
-// クリックで切り替え
+
 toggleBtn.onclick = ()=>{
   const hidden = panel.classList.toggle('hidden');
   localStorage.setItem('panelHidden', hidden ? '1' : '0');
@@ -406,7 +406,7 @@ toggleBtn.onclick = ()=>{
 };
 
 
-// ==== 可変ヘッダー/フッターに追従して右パネル位置を調整 ====
+
 const rootStyle = document.documentElement.style;
 function updatePanelInsets(){
   const header = document.querySelector('header');
@@ -416,10 +416,10 @@ function updatePanelInsets(){
   rootStyle.setProperty('--header-h', hh + 'px');
   rootStyle.setProperty('--footer-h', fh + 'px');
 }
-updatePanelInsets();                 // 初回
+updatePanelInsets();                 
 window.addEventListener('resize', updatePanelInsets);
 
-// ヘッダー/フッターの高さ変化を監視（折り返しやフォント読み込みに対応）
+
 if ('ResizeObserver' in window){
   const ro = new ResizeObserver(updatePanelInsets);
   const header = document.querySelector('header');
@@ -489,7 +489,7 @@ function updateSeatSelectNonDestructive(snap, mySeat){
 
 const turnEl = document.querySelector('#turn');
 
-// players table（席列をラベルで）
+
 const rows = ['<tr><th>オマ</th><th>ゾーサリーヌ</th><th>ゾーサン</th></tr>'];
 for (const seat of ['N','E','S','W']){
   const p = snap.players?.[seat];
@@ -506,13 +506,13 @@ document.querySelector('#players').innerHTML = rows.join('');
 const innerW = W - PAD*2, innerH = H - PAD*2;
 const cell = innerW / 5;
 
-// グリッド（内側に描く）
+
 ctx.strokeStyle = '#333';
 for (let i=0;i<=5;i++){
   ctx.beginPath(); ctx.moveTo(PAD, PAD + i*cell); ctx.lineTo(PAD + innerW, PAD + i*cell); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(PAD + i*cell, PAD); ctx.lineTo(PAD + i*cell, PAD + innerH); ctx.stroke();
 }
-// ラベル（盤の外側に大きめ）
+
 const COLS = (snap.labels?.cols ?? ['A','B','C','D','E']).slice(0,5);
 const ROWS = (snap.labels?.rows ?? ['1','2','3','4','5']).slice(0,5);
 
@@ -520,19 +520,19 @@ ctx.save();
 ctx.fillStyle = '#bbb';
 ctx.font = '18px ui-monospace';
 
-// 上：列（外側・下揃え）
+
 ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
 COLS.forEach((ch,i)=> ctx.fillText(ch, PAD + i*cell + cell/2, PAD - 6));
 
-// 左：行（外側・右揃え）
+
 ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
 ROWS.forEach((ch,i)=> ctx.fillText(ch, PAD - 6, PAD + i*cell + cell/2));
 ctx.restore();
 
-// 便利用：盤座標→ピクセル
+
 const gx = x => PAD + x*cell;
 const gy = y => PAD + y*cell;
-    // arrows（座席ごとの内向きに回した象さんSVG）
+    
     // arrows
 if (snap.arrows){
   for (const [seat,xy] of Object.entries(snap.arrows)){
@@ -568,7 +568,7 @@ const drawEdgeBand = (seat, alpha)=> {
 
 if (mySeat) drawEdgeBand(mySeat, 0.20);
 
-// 外側の名前
+
 function drawName(seat, x, y, rot=0){
   const p = snap.players?.[seat]; if (!p) return;
   ctx.save();
@@ -591,16 +591,16 @@ function drawPiece(x, y, dir, color){
   ctx.translate(cx, cy);
   ctx.rotate(angleForDir(dir));
 
-  const sz = cell * 0.86; // お好みで 0.8〜0.95
+  const sz = cell * 0.86; 
 
   if (onmyouReady){
     const img = colorizedOnmyou(color);
     if (img){
-      // 反転中（パオチャンカパーナ）を少しわかりやすくしたいなら薄い白グローを足す
+      
       if (snap?.reverseActive){
         ctx.save();
         ctx.globalAlpha = 0.65;
-        ctx.drawImage(colorizedOnmyou('#ffffff'), -sz/2, -sz/2, sz, sz); // 白い仮グロー
+        ctx.drawImage(colorizedOnmyou('#ffffff'), -sz/2, -sz/2, sz, sz); 
         ctx.restore();
       }
       ctx.drawImage(img, -sz/2, -sz/2, sz, sz);
@@ -609,7 +609,7 @@ function drawPiece(x, y, dir, color){
     }
   }
 
-  // フォールバック：五角形（画像未ロード時だけ）
+  
   const r = cell * 0.38;
   const pts = regularPolygonPoints(5, r, -Math.PI/2);
   ctx.beginPath();
@@ -636,12 +636,12 @@ function drawArrowMarker(x, y, seat){
   ctx.rotate(ang);
   if (zousanReady){
     const img = colorizedZousan(color);
-    const sz = cell * 0.9; // 矢印は大きめ
-    ctx.globalAlpha = 0.5;   // ★ 濃さを下げる（下が見える）
+    const sz = cell * 0.9; 
+    ctx.globalAlpha = 0.5;   
     ctx.drawImage(img, -sz/2, -sz/2, sz, sz);
     ctx.globalAlpha = 1.0;
   } else {
-    // フォールバック：小さめ五角形
+    
     const r = cell * 0.38;
     const pts = regularPolygonPoints(5, r, -Math.PI/2);
     ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
@@ -670,7 +670,7 @@ function regularPolygonPoints(n, r, start){
   return out;
 }
 
-// 自席→内向きの方向（象さんの向き用）
+
 function seatInwardDir(seat){
   return seat==='N' ? 'down' :
          seat==='S' ? 'up'   :
@@ -683,7 +683,7 @@ function seatInwardDir(seat){
   }
 
 async function animatePath({ seat, path, exit, scoreDelta }){
-  // 描画用の寸法は毎ステップで再計算しない
+  
   const W = cvs.width, H = cvs.height;
   const PAD = Math.round(Math.min(W, H) * 0.08);
   const innerW = W - PAD * 2;
@@ -697,7 +697,7 @@ async function animatePath({ seat, path, exit, scoreDelta }){
     await wait(120);
   }
 
-  // ★ここが重要：最後の一コマを消して終了
+  
   render();
 }
 
