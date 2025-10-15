@@ -128,8 +128,6 @@ button.mini{
   パトゥ
 </h4>
 <div id="log"></div>
-
-    <div id="log"></div>
   </aside>
 </main>
 <footer>
@@ -139,7 +137,7 @@ button.mini{
 </footer>
 
 <script>
-  const ws = new WebSocket((location.protocol.replace('http','ws')) + '//' + location.host + '/ws');
+  // const ws = new WebSocket((location.protocol.replace('http','ws')) + '//' + location.host + '/ws');
   let snap = null;
   let mySeat = null;
   let pendingSeat = null;
@@ -150,16 +148,56 @@ button.mini{
 let logTotal      = 0;
 
 
-const CID_KEY = 'cid';
-let CID = sessionStorage.getItem(CID_KEY);
-if (!CID) {
-  CID = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  sessionStorage.setItem(CID_KEY, CID);
-}
-ws.addEventListener('open', ()=>{
-  ws.send(JSON.stringify({ type: 'resume', cid: CID }));
-});
 
+window.addEventListener('zs:you', e => {
+  mySeat = e.detail.seat || null;
+  // const seatSel = document.querySelector('#seat');
+  // const sitBtn  = document.querySelector('#sit');
+  // seatSel.disabled = false;
+  // if (sitBtn)  sitBtn.disabled  = !!mySeat;
+  render();
+});
+window.addEventListener('zs:state', e => {
+  snap = e.detail;
+  document.documentElement.classList.toggle('reversed', !!snap.reverseActive);
+  updateTurnPill(snap);
+  render();
+  rebuildLogFromSnapshot(snap);
+  logLoadedTo   = Number.isFinite(snap.logEnd) ? snap.logEnd : (snap.logs?.length || 0);
+  logLoadedFrom = logLoadedTo - (snap.logs?.length || 0);
+  logTotal      = Number.isFinite(snap.logEnd) ? snap.logEnd : logLoadedTo;
+});
+window.addEventListener('zs:log',   e => appendLogLine(e.detail));
+window.addEventListener('zs:logs',  e => {
+  const { lines, start, total } = e.detail;
+  const el = document.querySelector('#log'); if (!el) return;
+  const prevHeight = el.scrollHeight;
+  const frag = document.createDocumentFragment();
+  (lines || []).forEach(line=>{
+    const seat = detectSeatFromText(line);
+    const div  = document.createElement('div');
+    let cls = 'logline';
+    if (seat) cls += ` log-seat-${seat}`;
+    else if (String(line||'').trim().startsWith('—')) cls += ' sys';
+    div.className  = cls;
+    div.textContent= line;
+    frag.appendChild(div);
+  });
+  el.insertBefore(frag, el.firstChild);
+  const added = el.scrollHeight - prevHeight;
+  el.scrollTop = el.scrollTop + added;
+  logLoadedFrom = start;
+  logTotal      = total;
+});
+window.addEventListener('zs:path',  e => animatePath(e.detail));
+
+window.addEventListener('zs:error', e => {
+  alert(e.detail);
+  if (pendingSeat){
+    disableSeatOption(pendingSeat, false);
+    pendingSeat = null;
+    }
+});
 
 const TURN_COLORS = { N:'#e74c3c', E:'#3498db', S:'#2ecc71', W:'#f1c40f' };
 
@@ -195,7 +233,7 @@ function detectSeatFromText(text){
     
     const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    for (const s of ['N','E','S','W']){
+    for (const s of ['W','N','E','S']){
       const lab = SL[s]; if (!lab) continue;
 
       
@@ -255,10 +293,9 @@ function rebuildLogFromSnapshot(s){
 }
 async function loadOlderLogs(){
   if (logLoadedFrom <= 0) return;
-  const req = { type:"logs", end: logLoadedFrom, limit: 120 };
-  ws.send(JSON.stringify(req));
-
+  window.loadLogs?.(logLoadedFrom, 120);
 }
+
 
 
 const zousanImg = new Image();
@@ -313,108 +350,9 @@ function colorizedOnmyou(color){
   return off;
 }
 
-
-
-
-  ws.addEventListener('open', ()=>{
-  const nm = sessionStorage.getItem('name');
-  if (nm) { document.querySelector('#name').value = nm;
-            ws.send(JSON.stringify({type:'name', name:nm})); }
-
-});
-
-
-
-
-
-
-
-
-  ws.addEventListener('message', ev=>{
-    const m = JSON.parse(ev.data);
-  if (m.type==='hello'){
-    sessionStorage.setItem('myCid', m.id);
-     } else if (m.type==='ok' && m.for === 'cmd') {
-   const t = document.getElementById('cmd');
-   if (t) t.value = '';
-} else if (m.type === 'you') {
-  mySeat = m.seat || null;
-
-  
-  if (mySeat == null) document.documentElement.classList.remove('reversed');
-
-  
-  const seatSel = document.querySelector('#seat');
-  const sitBtn  = document.querySelector('#sit');
-  if (seatSel) seatSel.disabled = !!mySeat;
-  if (sitBtn)  sitBtn.disabled  = !!mySeat;
-
-  if (!mySeat){
-    
-    
-  }
-  pendingSeat = null;
-  render();
-  return;
-} else if (m.type === 'state') {
-  snap = m.data;
-  document.documentElement.classList.toggle('reversed', !!snap.reverseActive);
-  pendingSeat = null;
-  render();
-  rebuildLogFromSnapshot(snap);
-  logLoadedTo   = Number.isFinite(snap.logEnd) ? snap.logEnd : (snap.logs?.length || 0);
-  logLoadedFrom = logLoadedTo - (snap.logs?.length || 0);
-  logTotal      = Number.isFinite(snap.logEnd) ? snap.logEnd : logLoadedTo;
-}
-
-else if (m.type==='log'){
- 
-  const el = document.querySelector('#log');
-      appendLogLine(m.line);
-    // } else if (m.type==='help'){
-    //   (m.lines || []).forEach(line => appendLogLine(line));
-    //   el.textContent += m.lines.join('\n') + '\n'; el.scrollTop = el.scrollHeight;
-    } else if (m.type==='path'){
-  animatePath(m);
-
-} else if (m.type === 'logs') {
-  const el = document.querySelector('#log'); if (!el) return;
-
-  // 先頭に差し込むので、いまの高さを覚えてスクロール位置を補正
-  const prevHeight = el.scrollHeight;
-
-  // m.lines は古い順で来る想定 → そのまま先頭に追加
-  const frag = document.createDocumentFragment();
-  (m.lines || []).forEach(line=>{
-    const seat = detectSeatFromText(line);
-    const div  = document.createElement('div');
-    let cls = 'logline';
-    if (seat) cls += ` log-seat-${seat}`;
-    else if (String(line||'').trim().startsWith('—')) cls += ' sys';
-    div.className  = cls;
-    div.textContent= line;
-    frag.appendChild(div);
-  });
-  el.insertBefore(frag, el.firstChild);
-  const added = el.scrollHeight - prevHeight;
-  el.scrollTop = el.scrollTop + added;
-  logLoadedFrom = m.start;
-  logTotal      = m.total;
-
-} else if (m.type==='error'){
-
-      alert(m.message);
-      if (pendingSeat){
-   disableSeatOption(pendingSeat, false);
-   pendingSeat = null;
- }
-    }
-
-  });
-
 document.querySelector('#sit').onclick = ()=>{
   const name = document.querySelector('#name').value.trim();
-  if (name){ localStorage.setItem('name', name); ws.send(JSON.stringify({type:'name', name})); }
+  if (name){ localStorage.setItem('name', name); window.setName?.(name); }
 
   const seatSel = document.querySelector('#seat');
   const seat = seatSel.value;
@@ -422,12 +360,11 @@ document.querySelector('#sit').onclick = ()=>{
 
   pendingSeat = seat;
   disableSeatOption(seat, true);
-
-  ws.send(JSON.stringify({type:'seat', seat}));
+  window.chooseSeat?.(seat)
 };
 document.querySelector('#softRestart').onclick = ()=>{
   if (confirm('パオシャーンシャーン オメ？')) {
-    ws.send(JSON.stringify({type:'resetGame'}));
+  window.resetGame?.();
   }
 };
 
@@ -435,8 +372,8 @@ document.querySelector('#softRestart').onclick = ()=>{
 document.querySelector('#send').onclick = sendCmd;
 document.querySelector('#restart').onclick = ()=>{
   if (confirm('シャーンシャーン オメ？')){
-    ws.send(JSON.stringify({type:'reset'}));
-    sessionStorage.removeItem('name');
+    window.resetAll?.();
+    localStorage.removeItem('name');        // ← ここも localStorage に
     const nameEl = document.querySelector('#name');
     if (nameEl) nameEl.value = '';
     const seatSel = document.querySelector('#seat');
@@ -478,8 +415,9 @@ if (shrinkBtnFooter){
 toggleBtn.onclick = ()=>{
   const hidden = panel.classList.toggle('hidden');
   localStorage.setItem('panelHidden', hidden ? '1' : '0');
-  toggleBtn.textContent = hidden ? 'パトゥ' : 'フザケパトゥ';
+  toggleBtn.textContent = hidden ? 'パトゥ' : 'フザケ パトゥ';
 };
+
 
 
 
@@ -513,55 +451,59 @@ function disableSeatOption(val, disabled){
 }
 
 
-  function sendCmd(){
+function sendCmd(){
   const t = document.querySelector('#cmd');
   if (!t) return;
-
   const sendText = t.value.trim();
   if (!sendText) return;
-
-  ws.send(JSON.stringify({ type:'cmd', text: sendText }));
-
+  window.sendCmd?.(sendText);
+  t.value = '';
 }
 
- function loadOlderLogs(){
-  if (logLoadedFrom <= 0) return;
-  ws.send(JSON.stringify({ type:'logs', end: logLoadedFrom, limit: 120 }));
-}
 
-  const cvs = document.querySelector('#board');
-  const ctx = cvs.getContext('2d');
+
 function updateSeatSelectNonDestructive(snap, mySeat){
   const seatSel = document.querySelector('#seat');
   if (!seatSel) return;
+
   const SL = snap?.seatLabels || {N:'N',E:'E',S:'S',W:'W'};
-  const desired = [["","—"],["N",SL.N],["E",SL.E],["S",SL.S],["W",SL.W]];
+  const desired = [["","—"],["W",SL.W],["N",SL.N],["E",SL.E],["S",SL.S]];
+
   const prevValue = seatSel.value;
   const cur = new Map([...seatSel.options].map(o => [o.value, o]));
-  for (const [val,label] of desired){
+
+  for (const [val, label] of desired){
     let opt = cur.get(val);
-    if (!opt){ opt = new Option(label,val); seatSel.add(opt); }
-    else if (opt.textContent !== label){ opt.textContent = label; }
-    opt.disabled = (val===""? false : !!snap.players?.[val]);
+    if (!opt){
+      opt = new Option(label, val);
+      seatSel.add(opt);
+    } else if (opt.textContent !== label){
+      opt.textContent = label;
+    }
+    opt.disabled = (val === "" ? false : !!snap.players?.[val]);
   }
+
+
   for (const o of [...seatSel.options]){
     if (!desired.some(([v]) => v === o.value)) seatSel.remove(o.index);
   }
-  seatSel.disabled = !!mySeat;
-  if (!mySeat){
-    const exists = [...seatSel.options].some(o => o.value === prevValue && !o.disabled);
-    seatSel.value = exists ? prevValue : "";
+
+  seatSel.disabled = false;
+
+  const stillOk = [...seatSel.options].some(o => o.value === prevValue && !o.disabled);
+  seatSel.value = stillOk ? prevValue : "";
+if (!seatSel.value && mySeat && ![...seatSel.options].find(o=>o.value===mySeat)?.disabled){
+    seatSel.value = mySeat;
   }
 }
+
 
 
   function render(){
 
-  if (!snap) return;
-  if (snap) updateSeatSelectNonDestructive(snap, mySeat);
-     if (!snap) return;
-     const SL = snap.seatLabels || {N:'N',E:'E',S:'S',W:'W'};
-    updateSeatSelectNonDestructive(snap, mySeat);
+    if (!snap) return;
+ const SL = snap.seatLabels || {N:'N',E:'E',S:'S',W:'W'};
+  updateSeatSelectNonDestructive(snap, mySeat);
     updateTurnPill(snap);
 
    
@@ -571,7 +513,7 @@ const turnEl = document.querySelector('#turn');
 
 
 const rows = ['<tr><th>オマ</th><th>ゾーサリーヌ</th><th>ゾーサン</th></tr>'];
-for (const seat of ['N','E','S','W']){
+for (const seat of ['W','N','E','S']){
   const p = snap.players?.[seat];
   rows.push(`<tr><td>${SL[seat]}</td><td>${p? p.name: '-'}</td><td>${p? p.score: 0}</td></tr>`);
 }
@@ -642,7 +584,7 @@ const drawEdgeBand = (seat, alpha)=> {
   ctx.restore();
 };
 
-['N','E','S','W'].forEach(s=>{
+['W','N','E','S'].forEach(s=>{
   if (snap.players?.[s]) drawEdgeBand(s, 0.10);
 });
 
@@ -762,25 +704,89 @@ function seatInwardDir(seat){
     function seatColor(seat){ return {N:'#e74c3c',E:'#3498db',S:'#2ecc71',W:'#f1c40f'}[seat] || '#aaa'; }
   }
 
-async function animatePath({ seat, path, exit, scoreDelta }){
-  
+
+  function cellSizeAndPad(){
   const W = cvs.width, H = cvs.height;
   const PAD = Math.round(Math.min(W, H) * 0.08);
-  const innerW = W - PAD * 2;
+  const innerW = W - PAD*2, innerH = H - PAD*2;
   const cell = innerW / 5;
+  return { W, H, PAD, innerW, innerH, cell };
+}
+function cellCenter(x, y){
+  const { PAD, cell } = cellSizeAndPad();
+  return { cx: PAD + x*cell + cell/2, cy: PAD + y*cell + cell/2 };
+}
+function drawPathBeam(points, color){
+  if (points.length < 2) return;
+  ctx.save();
+  // “光ってる”感じ
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineJoin = 'round';
+  ctx.lineCap  = 'round';
 
-  for (let i = 0; i < path.length; i++){
-    render(); // いったん全体をクリーンに描く
-    const { x, y } = path[i];
-    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-    ctx.fillRect(PAD + x * cell + 1, PAD + y * cell + 1, cell - 2, cell - 2);
-    await wait(120);
-  }
+  // 外側の柔らかいグロー
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 14;
+  ctx.shadowColor = '#ffffff';
+  ctx.shadowBlur = 18;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i=1;i<points.length;i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.stroke();
 
-  
-  render();
+  // 中心の芯
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = color || 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i=1;i<points.length;i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
+
+async function animatePath({ seat, path, exit, scoreDelta }){
+  const { PAD, cell } = cellSizeAndPad();
+  const coreColor = seatColor(seat); // 芯の線色
+
+  // ポリライン用の点列：矢印マス中心 → 各マス中心
+  const points = [];
+  const startXY = snap?.arrows?.[seat];
+  if (startXY){
+    const { cx, cy } = cellCenter(startXY.x, startXY.y);
+    points.push({ x: cx, y: cy });
+  }
+  for (const p of path){
+    const { cx, cy } = cellCenter(p.x, p.y);
+    points.push({ x: cx, y: cy });
+  }
+
+  for (let i = 0; i < path.length; i++){
+    render(); // 盤・駒・矢印をまず描く
+
+    // ここまで踏破したセル矩形を淡く
+    for (let k = 0; k <= i; k++){
+      const { x, y } = path[k];
+      ctx.fillStyle = 'rgba(255,255,255,0.20)';
+      ctx.fillRect(PAD + x*cell + 1, PAD + y*cell + 1, cell - 2, cell - 2);
+    }
+    drawPathBeam(points.slice(0, Math.min(points.length, i + 2)), coreColor);
+    await wait(120);
+  }
+  // 最後にフルの経路を少しだけ表示してからクリア
+  render();
+  // 全セル淡く
+  for (let i=0;i<path.length;i++){
+    const { x, y } = path[i];
+    ctx.fillStyle = 'rgba(255,255,255,0.20)';
+    ctx.fillRect(PAD + x*cell + 1, PAD + y*cell + 1, cell - 2, cell - 2);
+  }
+  drawPathBeam(points, coreColor);
+  await wait(400);
+  render();
+}
   function wait(ms){ return new Promise(r=>setTimeout(r,ms)); 
 
 

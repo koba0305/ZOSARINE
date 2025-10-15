@@ -18,8 +18,8 @@ app.get("/healthz", (_,res)=>res.send("ok"));
 
 
 const SIZE = 5;
-const SEATS = ["N","E","S","W"];
-const SEAT_ORDER = ["N","E","S","W"];
+const SEATS = ["W","N","E","S"];
+const SEAT_ORDER = ["W","N","E","S"];
 const STEP_LIMIT = 30;
 
 
@@ -814,7 +814,7 @@ function handleLaunchCommon(seat, mode, arg){
     state.vow2x[seat].active = false;
   }
 
-  state.players[seat].score = (state.players[seat].score || 0) + delta;
+  state.players[seat].score = (state.players[seat].score || 1) + delta;
 
   const showExit = (ex)=> ex === "loop" ? "チキン" : (seatLabel(ex) || ex);
   log(`→ ${showExit(exit)} トムヤ${bends} ゾーサン${delta}`);
@@ -1038,6 +1038,15 @@ if (seatInUse(want)) {
  ws.send(JSON.stringify({ type: "ok", for: "cmd" }));
  return;
 }
+if (m.type === "logs") {
+  const end   = Math.max(0, Math.min(state.logs.length, Number(m.end)   || 0));
+  const limit = Math.max(1, Math.min(200,                      Number(m.limit) || 120));
+  const start = Math.max(0, end - limit);
+  const lines = state.logs.slice(start, end);
+  ws.send(JSON.stringify({ type: "logs", start, end, total: state.logs.length, lines }));
+  return;
+}
+
 
     if (m.type === "reset") {
       
