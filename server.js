@@ -23,7 +23,7 @@ const SEAT_ORDER = ["N","E","S","W"];
 const STEP_LIMIT = 30;
 
 
-const OATH_BONUS = 2;         
+const OATH_BONUS = 1;         
 const OATH_FAIL_PENALTY = -5; 
 
 
@@ -397,7 +397,8 @@ function snapshot(){
       const p = state.players[seat];
       return [seat, p? {name:p.name??seat, score:p.score??0} : null];
     })),
-    logs: state.logs.slice(-30)
+    logs: state.logs.slice(-120),
+    logEnd: state.logs.length
   };
 }
 
@@ -764,7 +765,7 @@ function handleLaunchCommon(seat, mode, arg){
   assertTurn(seat);
 
   
-  log(`—(${mode==="launch" ? "パオ" : "プア"} オメ) —`);
+
   log(`${seatLabel(seat)}【ナギ】`);
   log(`${seatLabel(seat)}: ${mode==="launch" ? "パオ" : "プア"}`);
 

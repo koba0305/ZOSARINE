@@ -85,6 +85,23 @@ label{ white-space: nowrap; }           /* ラベルも1行で */
 .log-seat-S{background:rgba(46,204,113,.15);border-left:2px solid #2ecc71}
 .log-seat-W{background:rgba(241,196,15,.15);border-left:2px solid #f1c40f}
 
+
+/* 小さめボタン */
+button.mini{
+  font-size: 12px;
+  padding: 2px 8px;
+  line-height: 1.4;
+}
+
+/* ログ縮小モード（右パネル内のログだけ高さ制限） */
+#right.compact-log #log{
+  max-height: 160px;      /* お好みの高さに */
+  overflow: auto;
+  border: 1px solid #222;
+  border-radius: 8px;
+  padding: 4px;
+}
+
   @media (max-width: 720px){
   #right{ right:0; width:88vw; }
 }
@@ -112,20 +129,30 @@ label{ white-space: nowrap; }           /* ラベルも1行で */
   <aside id="right">
     <h4>レーゾーサリーヌ</h4>
     <table id="players"></table>
-    <h4>パトゥ</h4>
+<h4>
+  パトゥ
+</h4>
+<div id="log"></div>
+
     <div id="log"></div>
   </aside>
 </main>
 <footer>
   <input id="cmd" placeholder="..." style="flex:1">
+  <button id="shrinkLog" title="ログ縮小/元に戻す">パトゥ</button>
   <button id="send">オメ</button>
 </footer>
+
 <script>
   const ws = new WebSocket((location.protocol.replace('http','ws')) + '//' + location.host + '/ws');
   let snap = null;
   let mySeat = null;
-let pendingSeat = null;
-let lastSeatForLogs = null;
+  let pendingSeat = null;
+
+  let lastSeatForLogs = null;
+  let logLoadedFrom = 0;
+  let logLoadedTo   = 0;
+let logTotal      = 0;
 
 
 const CID_KEY = 'cid';
@@ -224,8 +251,19 @@ function rebuildLogFromSnapshot(s){
   el.innerHTML = '';
   lastSeatForLogs = null; 
   (s?.logs || []).forEach(line => appendLogLine(line));
-}
 
+  el.onscroll = async ()=>{
+   if (el.scrollTop <= 0) {
+     await loadOlderLogs();
+   }
+ };
+}
+async function loadOlderLogs(){
+  if (logLoadedFrom <= 0) return;
+  const req = { type:"logs", end: logLoadedFrom, limit: 120 };
+  ws.send(JSON.stringify(req));
+
+}
 
 
 const zousanImg = new Image();
@@ -329,6 +367,9 @@ function colorizedOnmyou(color){
   pendingSeat = null;
   render();
   rebuildLogFromSnapshot(snap);
+  logLoadedTo   = Number.isFinite(snap.logEnd) ? snap.logEnd : (snap.logs?.length || 0);
+  logLoadedFrom = logLoadedTo - (snap.logs?.length || 0);
+  logTotal      = Number.isFinite(snap.logEnd) ? snap.logEnd : logLoadedTo;
 }
 
 else if (m.type==='log'){
@@ -339,14 +380,41 @@ else if (m.type==='log'){
     //   (m.lines || []).forEach(line => appendLogLine(line));
     //   el.textContent += m.lines.join('\n') + '\n'; el.scrollTop = el.scrollHeight;
     } else if (m.type==='path'){
-      animatePath(m);
-    } else if (m.type==='error'){
+  animatePath(m);
+
+} else if (m.type === 'logs') {
+  const el = document.querySelector('#log'); if (!el) return;
+
+  // 先頭に差し込むので、いまの高さを覚えてスクロール位置を補正
+  const prevHeight = el.scrollHeight;
+
+  // m.lines は古い順で来る想定 → そのまま先頭に追加
+  const frag = document.createDocumentFragment();
+  (m.lines || []).forEach(line=>{
+    const seat = detectSeatFromText(line);
+    const div  = document.createElement('div');
+    let cls = 'logline';
+    if (seat) cls += ` log-seat-${seat}`;
+    else if (String(line||'').trim().startsWith('—')) cls += ' sys';
+    div.className  = cls;
+    div.textContent= line;
+    frag.appendChild(div);
+  });
+  el.insertBefore(frag, el.firstChild);
+  const added = el.scrollHeight - prevHeight;
+  el.scrollTop = el.scrollTop + added;
+  logLoadedFrom = m.start;
+  logTotal      = m.total;
+
+} else if (m.type==='error'){
+
       alert(m.message);
       if (pendingSeat){
    disableSeatOption(pendingSeat, false);
    pendingSeat = null;
  }
     }
+
   });
 
 document.querySelector('#sit').onclick = ()=>{
@@ -388,8 +456,6 @@ document.querySelector('#cmd').addEventListener('keydown', e=>{ if (e.key==='Ent
 
 const panel = document.querySelector('#right');
 const toggleBtn = document.querySelector('#togglePanel');
-
-
 const saved = localStorage.getItem('panelHidden') === '1';
 if (saved) {
   panel.classList.add('hidden');
@@ -398,11 +464,26 @@ if (saved) {
   toggleBtn.textContent = 'フザケ パトゥ';
 }
 
+const shrinkBtnFooter = document.getElementById('shrinkLog');
+const LS_KEY_SHRINK = 'logShrink';
+
+// 前回状態を復元
+if (localStorage.getItem(LS_KEY_SHRINK) === '1') {
+  panel.classList.add('compact-log');
+}
+
+if (shrinkBtnFooter){
+  shrinkBtnFooter.onclick = ()=>{
+    const now = panel.classList.toggle('compact-log');
+    localStorage.setItem(LS_KEY_SHRINK, now ? '1' : '0');
+  };
+}
+
 
 toggleBtn.onclick = ()=>{
   const hidden = panel.classList.toggle('hidden');
   localStorage.setItem('panelHidden', hidden ? '1' : '0');
-  toggleBtn.textContent = hidden ? 'パトゥ' : 'フザケ パトゥ';
+  toggleBtn.textContent = hidden ? 'パトゥ' : 'フザケパトゥ';
 };
 
 
@@ -448,7 +529,11 @@ function disableSeatOption(val, disabled){
 
 }
 
- 
+ function loadOlderLogs(){
+  if (logLoadedFrom <= 0) return;
+  ws.send(JSON.stringify({ type:'logs', end: logLoadedFrom, limit: 120 }));
+}
+
   const cvs = document.querySelector('#board');
   const ctx = cvs.getContext('2d');
 function updateSeatSelectNonDestructive(snap, mySeat){
