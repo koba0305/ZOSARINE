@@ -77,10 +77,10 @@ label{ white-space: nowrap; }
 
 #log .logline{padding:4px 6px;margin:2px 0;border-radius:6px;display:block}
 #log .sys{opacity:.85}
-.log-seat-N{background:rgba(231,76,60,.15);border-left:2px solid #e74c3c}
-.log-seat-E{background:rgba(52,152,219,.15);border-left:2px solid #3498db}
-.log-seat-S{background:rgba(46,204,113,.15);border-left:2px solid #2ecc71}
-.log-seat-W{background:rgba(241,196,15,.15);border-left:2px solid #f1c40f}
+.log-seat-N{background:rgba(60, 231, 151, 0.15);border-left:2px solid #01ffbb}
+.log-seat-E{background:rgba(94, 52, 219, 0.15);border-left:2px solid #1900ff}
+.log-seat-S{background:rgba(204, 117, 46, 0.15);border-left:2px solid #ffae00}
+.log-seat-W{background:rgba(241, 15, 117, 0.15);border-left:2px solid #ec1994}
 
 
 button.mini{
@@ -147,6 +147,8 @@ button.mini{
   let logLoadedTo   = 0;
 let logTotal      = 0;
 
+const cvs = document.querySelector('#board');
+const ctx = cvs.getContext('2d');
 
 
 window.addEventListener('zs:you', e => {
@@ -199,7 +201,7 @@ window.addEventListener('zs:error', e => {
     }
 });
 
-const TURN_COLORS = { N:'#e74c3c', E:'#3498db', S:'#2ecc71', W:'#f1c40f' };
+const TURN_COLORS = { N:'#01ffbb', E:'#1900ff', S:'#ffae00', W:'#ec1994' };
 
 function updateTurnPill(snap){
   const el = document.getElementById('turn');
@@ -381,9 +383,54 @@ document.querySelector('#restart').onclick = ()=>{
   }
 };
 
+(() => {
+  const input = document.getElementById('cmd');
+  if (!input) return;
 
-document.querySelector('#cmd').addEventListener('keydown', e=>{ if (e.key==='Enter' && (e.ctrlKey||e.metaKey)) sendCmd(); });
+  let composing = false; // IME状態は #cmd でだけ見る
+  input.addEventListener('compositionstart', () => composing = true);
+  input.addEventListener('compositionend',   () => composing = false);
 
+  // 送信本体（ボタンと同じ経路）
+  function safeSendCmd() {
+    const v = (input.value || '').replace(/\u200B/g, '').trim();
+    if (!v) return;
+    window.sendCmd?.(v);
+    input.value = '';
+  }
+
+  function isInteractive(el){
+    if (!el) return false;
+    if (el === input) return false;  // 自分の入力欄はOK
+    const tag = el.tagName;
+    return el.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  }
+
+  function handle(e){
+    // IME中の Enter 系はスキップ（ブラウザ差用に 229 も見る）
+    if (e.isComposing || e.keyCode === 229 || composing) return;
+
+    const isEnter = (e.key === 'Enter' || e.code === 'Enter' || e.keyCode === 13);
+    const hasMod  = (e.ctrlKey || e.metaKey);
+    if (!isEnter || !hasMod) return;
+
+    // 他の入力欄でのタイプ中は邪魔しない
+    if (isInteractive(e.target)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // フォーカスが無ければ付ける → 二段待ちで確定後に送信
+    if (document.activeElement !== input) input.focus();
+
+    setTimeout(() => setTimeout(() => {
+      safeSendCmd();
+    }, 0), 0);
+  }
+
+  // ドキュメント全体で拾う（キャプチャで先取り）
+  document.addEventListener('keydown', handle, true);
+})();
 
 
 const panel = document.querySelector('#right');
@@ -497,7 +544,8 @@ if (!seatSel.value && mySeat && ![...seatSel.options].find(o=>o.value===mySeat)?
   }
 }
 
-
+const SEAT_COLORS = { N:'#01ffbb', E:'#1900ff', S:'#ffae00', W:'#ec1994' };
+function seatColor(seat){ return SEAT_COLORS[seat] || '#aaa'; }
 
   function render(){
 
@@ -595,7 +643,7 @@ function drawName(seat, x, y, rot=0){
   const p = snap.players?.[seat]; if (!p) return;
   ctx.save();
   ctx.translate(x,y); ctx.rotate(rot);
-  ctx.fillStyle = (seat===mySeat)? '#fff' : '#bbb';
+  ctx.fillStyle = (seat===mySeat)? '#fff' : 'rgba(187,187,187,0.6';
   ctx.font = (seat===mySeat? 'bold ' : '') + '18px ui-monospace';
   ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText(p.name, 0, 0);
@@ -701,7 +749,6 @@ function seatInwardDir(seat){
 }
   
     function triangle(x1,y1,x2,y2,x3,y3){ ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.lineTo(x3,y3); ctx.closePath(); }
-    function seatColor(seat){ return {N:'#e74c3c',E:'#3498db',S:'#2ecc71',W:'#f1c40f'}[seat] || '#aaa'; }
   }
 
 
@@ -719,12 +766,11 @@ function cellCenter(x, y){
 function drawPathBeam(points, color){
   if (points.length < 2) return;
   ctx.save();
-  // “光ってる”感じ
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineJoin = 'round';
   ctx.lineCap  = 'round';
 
-  // 外側の柔らかいグロー
+  // 外側グロー
   ctx.strokeStyle = 'rgba(255,255,255,0.35)';
   ctx.lineWidth = 14;
   ctx.shadowColor = '#ffffff';
@@ -734,7 +780,7 @@ function drawPathBeam(points, color){
   for (let i=1;i<points.length;i++) ctx.lineTo(points[i].x, points[i].y);
   ctx.stroke();
 
-  // 中心の芯
+  // 芯線（座席色）
   ctx.shadowBlur = 0;
   ctx.strokeStyle = color || 'rgba(255,255,255,0.9)';
   ctx.lineWidth = 4;
@@ -742,10 +788,8 @@ function drawPathBeam(points, color){
   ctx.moveTo(points[0].x, points[0].y);
   for (let i=1;i<points.length;i++) ctx.lineTo(points[i].x, points[i].y);
   ctx.stroke();
-
   ctx.restore();
 }
-
 
 async function animatePath({ seat, path, exit, scoreDelta }){
   const { PAD, cell } = cellSizeAndPad();

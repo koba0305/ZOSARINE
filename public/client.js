@@ -7,12 +7,14 @@ const WS_HOST = location.hostname.endsWith('github.io')
   : location.host;
 const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + WS_HOST + '/ws';
 
+const CID_KEY = "zs_cid";
+const store = sessionStorage;
+let cid = store.getItem(CID_KEY);
+if (!cid) {
+  cid = crypto.randomUUID?.() || Math.random().toString(36).slice(2);
+  store.setItem(CID_KEY, cid);
+}
 
-  const CID_KEY = "cid";
-  let cid =
-    localStorage.getItem(CID_KEY) ||
-    (crypto.randomUUID?.() || Math.random().toString(36).slice(2));
-  localStorage.setItem(CID_KEY, cid);
 
   // ---- 再接続バックオフ ----
   let ws = null;
@@ -61,8 +63,8 @@ const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + WS_HOST +
     });
 
     ws.addEventListener("error", () => {
-      // ここでは close しない（サーバ都合で即 close される想定あり）
-      emit("zs:error", "network error");
+
+      // emit("zs:error", "network error");
     });
   }
 

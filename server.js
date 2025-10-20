@@ -802,11 +802,13 @@ function handleLaunchCommon(seat, mode, arg){
   
   const { path, exit, bends } = traceAnimal(seat, mode);
 
-  let delta = 0;
-  if (exit === "loop")       delta = -5;
-  else if (exit === seat)    delta = bends + 1;
-  else if (["N","E","S","W"].includes(exit)) delta = -bends;
-
+let delta = 0;
+  if (exit === "loop") {
+    delta = -5;
+  } else if (["N","E","S","W"].includes(exit)) {
+    const base = bends + 1;
+    delta = (exit === seat) ? base : -base;
+  }
   
   if (mode === "launch2" && state.vow2x[seat]?.active) {
     delta *= 2;
@@ -1006,8 +1008,13 @@ if (seatInUse(want)) {
  throw new Error("フザケ オマ");
  }
 
-  if (mySeat){ delete state.players[mySeat]; }
-
+ // 自分が別席へ移動する場合：前席を「離席ログあり」で開放
+  if (mySeat && mySeat !== want) {
+    const prev = mySeat;
+    const prevName = state.players[prev]?.name || myName || "";
+    delete state.players[prev];
+        log(`${seatLabel(prev)}: ${prevName} ヒンン オマ`); // ← 離席ログを出す
+ }
   
   mySeat = want;
   state.players[mySeat] = {
@@ -1018,7 +1025,7 @@ if (seatInUse(want)) {
     score: 0, 
   };
 
-  log(`${SEAT_LABELS[mySeat]}: ${myName} プッチョオマ`);
+ log(`${seatLabel(mySeat)}: ${myName} プッチョオマ`);
 
   ws.send(JSON.stringify({ type:"you", seat: mySeat }));
   broadcastAll({ type:"state", data: snapshot() });
@@ -1067,20 +1074,23 @@ ws.on("close", ()=>{
   const info   = state.players[seat];
   const oldWs  = info?.ws || ws;
   const cidKey = info?.cid;
-  const timer = setTimeout(()=>{
-    const stillSame = state.players[seat] && state.players[seat].ws === oldWs;
-    if (stillSame) {
-      const name = state.players[seat]?.name || "";
-      log(`${seatLabel(seat)}: ${name ? name + " " : ""}ヒンン オマ`); 
-
-      delete state.players[seat];
-      delete state.arrows[seat];
-      delete state.phaseActions[seat];
-
-      broadcastAll({ type:"state", data: snapshot() });
-    }
-    if (cidKey) pendingCloseTimers.delete(cidKey);
-  }, CLOSE_GRACE_MS);
+if (info) {
+  info.disconnectedAt = Date.now();
+  info.ws = null;
+}
+const timer = setTimeout(()=>{
+  const p = state.players[seat];
+  const stillWaiting = p && p.ws == null && p.disconnectedAt && (Date.now() - p.disconnectedAt >= CLOSE_GRACE_MS);
+  if (stillWaiting) {
+    const name = p?.name || "";
+    log(`${seatLabel(seat)}: ${name ? name + " " : ""}ヒンン オマ`);
+    delete state.players[seat];
+    delete state.arrows[seat];
+    delete state.phaseActions[seat];
+    broadcastAll({ type:"state", data: snapshot() });
+  }
+  if (cidKey) pendingCloseTimers.delete(cidKey);
+}, CLOSE_GRACE_MS);
 
   if (cidKey) pendingCloseTimers.set(cidKey, timer);
 
