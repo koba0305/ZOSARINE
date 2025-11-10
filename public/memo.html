@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>語彙メモ</title>
+<style>
+  body { background:#111; color:#eee; font:13px/1.5 ui-monospace,monospace; margin:0; }
+  header { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid #2a2a2a; }
+  .badge { padding:2px 8px; border:1px solid #444; border-radius:999px; font-size:12px; background:#1a1a1a; }
+  .muted { margin-left:auto; color:#aaa; font-size:12px; }
+  main { padding:10px 14px; display:flex; flex-direction:column; gap:16px; }
+
+  section.group { border:1px solid #333; border-radius:10px; overflow:hidden; background:#151515; }
+  .groupHead { padding:6px 10px; font-weight:700; border-bottom:1px solid #333; display:flex; align-items:center; gap:8px; }
+  .chip { width:10px; height:10px; border-radius:50%; border:2px solid #fff; }
+
+  table.lex { width:100%; border-collapse:collapse; table-layout:fixed; }
+  table.lex col.term { width: 28%; }
+  table.lex col.note { width: 72%; }
+  table.lex th, table.lex td { padding:6px 8px; border-bottom:1px solid #262626; vertical-align:top; }
+  table.lex thead th { color:#bbb; text-align:left; font-weight:600; border-bottom:1px solid #333; }
+  table.lex tbody tr:last-child td { border-bottom:none; }
+
+  td.term { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; }
+  textarea.noteBox{
+    width:100%; min-height:28px; max-height:34vh; line-height:1.35;
+    background:#000; color:#fff; border:1px solid #fff; border-radius:6px;
+    padding:6px 8px; resize:none; overflow:hidden;
+  }
+</style>
+</head>
+<body>
+<header>
+  <strong>語彙メモ</strong>
+  <span id="table" class="badge"></span>
+  <span id="status" class="muted">接続中…</span>
+</header>
+
+<main id="groups"></main>
+
+<script>
+  const tableId = new URLSearchParams(location.search).get('table') || 'DEFAULT';
+  document.getElementById('table').textContent = tableId;
+
+  // 起動時シード（あなたが編集可）※ groupId は任意
+const LEX_SEED_TERMS = [
+  // --- number（べヒュー・数）---
+  { label:"マー", groupId:"number" },
+  { label:"イヒ", groupId:"number" },
+  { label:"ツ", groupId:"number" },
+  { label:"レー", groupId:"number" },
+  { label:"ソ", groupId:"number" },
+  { label:"ダラ", groupId:"number" },
+  { label:"ギッ", groupId:"number" },
+  { label:"グウ", groupId:"number" },
+  { label:"デベ", groupId:"number" },
+  { label:"ドオ", groupId:"number" },
+
+  // --- yes（テメ・行為系）---
+  { label:"ナギ", groupId:"yes" },
+  { label:"フザケ", groupId:"yes" },
+
+  // --- zosan（ゾーサン・音声系）---
+  { label:"ウット", groupId:"zosan" },
+  { label:"シャーンシャーン", groupId:"zosan" },
+  { label:"ゾーサリーヌ", groupId:"zosan" },
+  { label:"ゾーサン", groupId:"zosan" },
+  { label:"パオ", groupId:"zosan" },
+  { label:"パトゥ", groupId:"zosan" },
+
+  // --- symbol（トムヤ・象徴系）---
+  { label:"ウホ", groupId:"symbol" },
+  { label:"イザ", groupId:"symbol" },
+  { label:"ンマ", groupId:"symbol" },
+  { label:"プッチョ", groupId:"symbol" }
+];
+
+
+  const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+  const ws = new WebSocket(WS_URL);
+  const statusEl = document.getElementById('status');
+
+  ws.addEventListener('open', () => {
+    statusEl.textContent = '接続中 ✓';
+    ws.send(JSON.stringify({ type:'lex:join', tableId }));
+  });
+
+  ws.addEventListener('message', (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+
+    if (m.type === 'lex:init') {
+      const hasAny = Array.isArray(m.payload?.terms) && m.payload.terms.length > 0;
+      if (!hasAny && SEED_TERMS.length) {
+        for (const it of SEED_TERMS) {
+          ws.send(JSON.stringify({ type:'lex:add', label: it.label, groupId: it.groupId }));
+        }
+        return; // 直後の lex:update を待つ
+      }
+      render(m.payload);
+    }
+    if (m.type === 'lex:update') render(m.payload);
+  });
+
+  ws.addEventListener('close', () => statusEl.textContent = '切断（オフライン）');
+
+  function autoGrow(ta){
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + 'px';
+  }
+
+  function render(doc){
+    const groupsEl = document.getElementById('groups');
+    groupsEl.innerHTML = '';
+
+    const groups = doc.groups || {};
+    const terms  = (doc.terms || []).slice();
+
+    // groupId ごとにまとめ、各グループ内は firstSeenSeq 昇順
+    const byGroup = {};
+    for (const t of terms) {
+      const gid = t.groupId || 'red';
+      (byGroup[gid] ||= []).push(t);
+    }
+    for (const gid of Object.keys(byGroup)) {
+      byGroup[gid].sort((a,b)=>(a.firstSeenSeq||0)-(b.firstSeenSeq||0));
+    }
+
+    // groups 定義順で縦並び
+    for (const gid of Object.keys(groups)) {
+      const ginfo = groups[gid];
+      const list = byGroup[gid] || [];
+
+      const sec = document.createElement('section');
+      sec.className = 'group';
+
+      const head = document.createElement('div');
+      head.className = 'groupHead';
+      head.style.borderBottomColor = ginfo.color || '#666';
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.style.background = ginfo.color || '#666';
+      const title = document.createElement('span');
+      title.textContent = `${ginfo.name || gid}（${list.length}）`;
+      head.appendChild(chip); head.appendChild(title);
+      sec.appendChild(head);
+
+      const tbl = document.createElement('table');
+      tbl.className = 'lex';
+      tbl.innerHTML = `
+        <colgroup><col class="term"><col class="note"></colgroup>
+        <thead><tr><th>用語</th><th>メモ</th></tr></thead>
+        <tbody></tbody>`;
+      const tbody = tbl.querySelector('tbody');
+
+      for (const t of list) {
+        const tr = document.createElement('tr');
+
+        const tdL = document.createElement('td');
+        tdL.className = 'term';
+        tdL.textContent = t.label;
+
+        const tdR = document.createElement('td');
+        const ta = document.createElement('textarea');
+        ta.className = 'noteBox';
+        ta.value = t.note ?? localStorage.getItem(`lex:${tableId}:${t.id}`) ?? '';
+        autoGrow(ta);
+        ta.addEventListener('input', () => {
+          autoGrow(ta);
+          clearTimeout(ta._t);
+          ta._t = setTimeout(() => {
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({ type:'lex:updateNote', id: t.id, note: ta.value }));
+            }
+            localStorage.setItem(`lex:${tableId}:${t.id}`, ta.value);
+          }, 250);
+        });
+        tdR.appendChild(ta);
+
+        tr.appendChild(tdL); tr.appendChild(tdR);
+        tbody.appendChild(tr);
+      }
+
+      sec.appendChild(tbl);
+      groupsEl.appendChild(sec);
+    }
+
+    statusEl.textContent = '同期済み ✓';
+  }
+
+  // RESTの保険
+  fetch(`/api/lex/${encodeURIComponent(tableId)}`)
+    .then(r=>r.json()).then(doc => { if (doc?.terms) render(doc); });
+</script>
+</body>
+</html>

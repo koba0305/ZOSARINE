@@ -106,9 +106,48 @@ button.mini{
   border-radius: 8px;
   padding: 4px;
 }
+/* 見出し行を横並びにして右側にボタン */
+#right .hrow{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin: 0 0 8px;
+}
+#right .hrow h4{
+  margin:0;
+}
+
+/* デカデカ白ボタン */
+.big-cta{
+  margin-left:auto;            /* 右端に寄せる */
+  display:inline-block;
+  padding:12px 18px;
+  font-weight:700;
+  font-size:14px;
+  line-height:1;
+  background:#fff;
+  color:#111;
+  border:2px solid #111;
+  border-radius:999px;
+  text-decoration:none;
+  box-shadow:0 2px 0 #111, 0 6px 16px rgba(0,0,0,.25);
+  transform: translateY(6px);
+  transition: transform .05s ease, box-shadow .15s ease, opacity .2s ease;
+  white-space:nowrap;
+   text-align:center;
+  line-height:1.1; /* お好みで */
+}
+.big-cta:hover{ opacity:.95; }
+.big-cta:active{
+  transform: translateY(1px);
+  box-shadow:0 1px 0 #111, 0 3px 10px rgba(0,0,0,.25);
+}
+
 
   @media (max-width: 720px){
   #right{ right:0; width:88vw; }
+    #right .hrow{ gap:8px; }
+  .big-cta{ padding:9px 12px; font-size:13px; }
 }
 
 </style>
@@ -131,14 +170,20 @@ button.mini{
 
 <main>
   <canvas id="board" width="500" height="500"></canvas>
-  <aside id="right">
+<aside id="right">
+
     <h4>レーゾーサリーヌ</h4>
-    <table id="players"></table>
-<h4>
-  パトゥ
-</h4>
-<div id="log"></div>
-  </aside>
+
+  <table id="players"></table>
+    <div class="hrow">
+  <h4>ナギパトゥ</h4>
+      <a class="big-cta" href="memo.html?table=TEST" target="_blank" rel="noopener">
+      シャーンシャーン<br>ゾーサリーヌ？
+    </a>
+  </div>
+  <div id="log"></div>
+</aside>
+
 </main>
 <footer>
   <input id="cmd" placeholder="..." style="flex:1">
@@ -205,6 +250,8 @@ window.addEventListener('zs:path',  e => animatePath(e.detail));
 
 window.addEventListener('zs:error', e => {
   alert(e.detail);
+  if (typeof e.detail === 'string' && e.detail.includes('プッチョトムヤ') && lastPutXY) flashCell(lastPutXY);
+
   if (pendingSeat){
     disableSeatOption(pendingSeat, false);
     pendingSeat = null;
@@ -453,7 +500,7 @@ const toggleBtn = document.querySelector('#togglePanel');
 const saved = localStorage.getItem('panelHidden') === '1';
 if (saved) {
   panel.classList.add('hidden');
-  toggleBtn.textContent = 'パトゥ';
+  toggleBtn.textContent = 'プッチョパトゥ';
 } else {
   toggleBtn.textContent = 'フザケ パトゥ';
 }
@@ -478,7 +525,7 @@ if (shrinkBtnFooter){
 toggleBtn.onclick = ()=>{
   const hidden = panel.classList.toggle('hidden');
   localStorage.setItem('panelHidden', hidden ? '1' : '0');
-  toggleBtn.textContent = hidden ? 'パトゥ' : 'フザケ パトゥ';
+  toggleBtn.textContent = hidden ? 'プッチョパトゥ' : 'フザケ パトゥ';
   requestAnimationFrame(updatePanelInsets);
 };
 
@@ -516,6 +563,29 @@ function disableSeatOption(val, disabled){
   const opt = [...seatSel.options].find(o=>o.value===val);
   if (opt) opt.disabled = !!disabled;
 }
+// ★ sendCmd() 定義のすぐ上か、近くに置く
+let lastPutXY = null;
+
+// スナップショットのラベルから、テキスト内のセル表記を推定して座標にする
+function guessCellFromText(text){
+  if (!snap || !snap.labels) return null;
+  const COLS = (snap.labels.cols || []).map(s => String(s).toLowerCase());
+  const ROWS = (snap.labels.rows || []).map(s => String(s).toLowerCase());
+
+  const s = String(text || '').toLowerCase().replace(/\s+/g,''); // 空白除去
+
+  // col+row / row+col の両方を素朴に探索
+  for (let cx=0; cx<COLS.length; cx++){
+    for (let ry=0; ry<ROWS.length; ry++){
+      const col = COLS[cx], row = ROWS[ry];
+      if (!col || !row) continue;
+
+      if (s.includes(col + row)) return { x: cx, y: ry };
+      if (s.includes(row + col)) return { x: cx, y: ry };
+    }
+  }
+  return null;
+}
 
 
 function sendCmd(){
@@ -523,6 +593,7 @@ function sendCmd(){
   if (!t) return;
   const sendText = t.value.trim();
   if (!sendText) return;
+  lastPutXY = guessCellFromText(sendText);
   window.sendCmd?.(sendText);
 }
 
@@ -770,6 +841,31 @@ function seatInwardDir(seat){
     function triangle(x1,y1,x2,y2,x3,y3){ ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.lineTo(x3,y3); ctx.closePath(); }
   }
 
+function flashCell(xy, ms = 450){
+  if (!xy) return;
+  const { PAD, cell } = cellSizeAndPad();
+  const x = xy.x, y = xy.y;
+
+  let t = 0;
+  const step = () => {
+    render();
+    const k = Math.max(0, 1 - t / ms); // 0→1 のフェード
+    ctx.save();
+    ctx.globalAlpha = 0.25 + 0.55 * k;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(PAD + x*cell + 1, PAD + y*cell + 1, cell - 2, cell - 2);
+
+    ctx.globalAlpha = 0.9 * k;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#ff2b6a';
+    ctx.strokeRect(PAD + x*cell + 2, PAD + y*cell + 2, cell - 4, cell - 4);
+    ctx.restore();
+
+    if (t < ms) { t += 50; setTimeout(step, 50); }
+    else { render(); }
+  };
+  step();
+}
 
   function cellSizeAndPad(){
   const W = cvs.width, H = cvs.height;
