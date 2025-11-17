@@ -31,50 +31,15 @@
 </head>
 <body>
 <header>
-  <strong>語彙メモ</strong>
+  <strong>シャーンシャーンゾーサリーヌパトゥ</strong>
   <span id="table" class="badge"></span>
   <span id="status" class="muted">接続中…</span>
 </header>
 
 <main id="groups"></main>
-
 <script>
   const tableId = new URLSearchParams(location.search).get('table') || 'DEFAULT';
   document.getElementById('table').textContent = tableId;
-
-  // 起動時シード（あなたが編集可）※ groupId は任意
-const LEX_SEED_TERMS = [
-  // --- number（べヒュー・数）---
-  { label:"マー", groupId:"number" },
-  { label:"イヒ", groupId:"number" },
-  { label:"ツ", groupId:"number" },
-  { label:"レー", groupId:"number" },
-  { label:"ソ", groupId:"number" },
-  { label:"ダラ", groupId:"number" },
-  { label:"ギッ", groupId:"number" },
-  { label:"グウ", groupId:"number" },
-  { label:"デベ", groupId:"number" },
-  { label:"ドオ", groupId:"number" },
-
-  // --- yes（テメ・行為系）---
-  { label:"ナギ", groupId:"yes" },
-  { label:"フザケ", groupId:"yes" },
-
-  // --- zosan（ゾーサン・音声系）---
-  { label:"ウット", groupId:"zosan" },
-  { label:"シャーンシャーン", groupId:"zosan" },
-  { label:"ゾーサリーヌ", groupId:"zosan" },
-  { label:"ゾーサン", groupId:"zosan" },
-  { label:"パオ", groupId:"zosan" },
-  { label:"パトゥ", groupId:"zosan" },
-
-  // --- symbol（トムヤ・象徴系）---
-  { label:"ウホ", groupId:"symbol" },
-  { label:"イザ", groupId:"symbol" },
-  { label:"ンマ", groupId:"symbol" },
-  { label:"プッチョ", groupId:"symbol" }
-];
-
 
   const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
   const ws = new WebSocket(WS_URL);
@@ -88,16 +53,7 @@ const LEX_SEED_TERMS = [
   ws.addEventListener('message', (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
 
-    if (m.type === 'lex:init') {
-      const hasAny = Array.isArray(m.payload?.terms) && m.payload.terms.length > 0;
-      if (!hasAny && SEED_TERMS.length) {
-        for (const it of SEED_TERMS) {
-          ws.send(JSON.stringify({ type:'lex:add', label: it.label, groupId: it.groupId }));
-        }
-        return; // 直後の lex:update を待つ
-      }
-      render(m.payload);
-    }
+    if (m.type === 'lex:init')  render(m.payload);
     if (m.type === 'lex:update') render(m.payload);
   });
 
@@ -115,17 +71,15 @@ const LEX_SEED_TERMS = [
     const groups = doc.groups || {};
     const terms  = (doc.terms || []).slice();
 
-    // groupId ごとにまとめ、各グループ内は firstSeenSeq 昇順
     const byGroup = {};
     for (const t of terms) {
-      const gid = t.groupId || 'red';
+      const gid = t.groupId || 'symbol';
       (byGroup[gid] ||= []).push(t);
     }
     for (const gid of Object.keys(byGroup)) {
       byGroup[gid].sort((a,b)=>(a.firstSeenSeq||0)-(b.firstSeenSeq||0));
     }
 
-    // groups 定義順で縦並び
     for (const gid of Object.keys(groups)) {
       const ginfo = groups[gid];
       const list = byGroup[gid] || [];
@@ -141,7 +95,8 @@ const LEX_SEED_TERMS = [
       chip.style.background = ginfo.color || '#666';
       const title = document.createElement('span');
       title.textContent = `${ginfo.name || gid}（${list.length}）`;
-      head.appendChild(chip); head.appendChild(title);
+      head.appendChild(chip);
+      head.appendChild(title);
       sec.appendChild(head);
 
       const tbl = document.createElement('table');
@@ -176,7 +131,8 @@ const LEX_SEED_TERMS = [
         });
         tdR.appendChild(ta);
 
-        tr.appendChild(tdL); tr.appendChild(tdR);
+        tr.appendChild(tdL);
+        tr.appendChild(tdR);
         tbody.appendChild(tr);
       }
 
@@ -187,9 +143,12 @@ const LEX_SEED_TERMS = [
     statusEl.textContent = '同期済み ✓';
   }
 
-  // RESTの保険
+  // RESTの保険（WSが失敗しても HTTP で一度は描画する）
   fetch(`/api/lex/${encodeURIComponent(tableId)}`)
-    .then(r=>r.json()).then(doc => { if (doc?.terms) render(doc); });
+    .then(r=>r.json())
+    .then(doc => { if (doc?.terms) render(doc); })
+    .catch(()=>{});
 </script>
+
 </body>
 </html>

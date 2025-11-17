@@ -11,88 +11,102 @@ const fsp = fs.promises;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-// グループ（プレイヤーには name/color だけ見える。IDは内部名）
+// ==== HTTP & WS bootstrap（必ず wss.on(...) より前に置く）====
+const app = express();
+
+app.use(express.static(path.join(__dirname, "public")));
+app.use(express.json());
+
+const server = http.createServer(app);
+
+
+// WebSocket サーバ（/ws に集約）
+const wss = new WebSocketServer({ server, path: "/ws" });
+
+// 全クライアント送信用ヘルパ（これだけを使う）
+function broadcastAll(msg) {
+  const s = JSON.stringify(msg);
+  for (const client of wss.clients) {
+    if (client && client.readyState === client.OPEN) {
+      try { client.send(s); } catch (_) {}
+    }
+  }
+}
+
 // ======== グループ定義 ========
 const LEX_GROUPS_PRESET = {
-  symbol: { name: "トムヤ",   color: "#ff4d4f" },  // 象徴・記号系
-  iti:    { name: "チャン",   color: "#4096ff" },  // 位置・方向系
+  tomuya: { name: "トムヤ",   color: "#ff4d4f" },  // 象徴・記号系
+  tyann:    { name: "チャン",   color: "#4096ff" },  // 位置・方向系
   zosan:  { name: "ゾーサン", color: "#fadb14" },  // ゾウ・音声・システム系
   yes:    { name: "テメ",     color: "#52c41a" },  // 行為・感情・意志系
-  number: { name: "べヒュー", color: "#9254de" }   // 数・構造系
+  number: { name: "キキヤーィ", color: "#9254de" },   // 数・構造系
+  iti: { name: "べヒュー", color: "#de5492ff" }   // 数・構造系
 };
 const DEFAULT_GROUP_ID = "symbol";
 
 
 // ======== グループ割当（GROUP_RULES） ========
 const GROUP_RULES = {
+  // --- number（べヒュー・数）---
+"ン":"number",
+  "マー":"number","イヒ":"number","ツ":"number","レー":"number","ソ":"number",
+  "ダラ":"number","ギッ":"number","グウ":"number","デベ":"number","ドオ":"number",
 
-  // --- symbol（赤）---
-  "プッチョ":"symbol", "トムヤ":"symbol", "ヘーネ":"symbol", "バーサ":"symbol",
-  "バババ":"symbol", "パロロ":"symbol", "ムクン":"symbol",
+  // --- tyann（チャン・位置・方向）---
+  "チャン":"tyann","バサシバサシ":"tyann","チョボ":"tyann","ヘネシヘネシ":"tyann",
 
-  // --- iti（青）---
-  "チャン":"iti", "バサシバサシ":"iti", "チョボ":"iti", "ヘネシヘネシ":"iti",
+  // --- tomuya（トムヤ・象徴）---
+  "トムヤ":"tomuya","プッチョ":"tomuya",  "バババ":"tomuya","パロロ":"tomuya","ヘーネ":"tomuya","バーサ":"tomuya",
 
-  // --- yes（緑）---
-  "チケ":"yes", "フザケ":"yes", "フザケッチ":"yes",
-  "カ":"yes", "オマ":"yes", "テメ":"yes", "キキヤーィ":"yes", "パトゥ":"yes",
+  // --- yes（テメ・行為）---
+  "チケ":"yes","フザケ":"yes","フザケッチ":"yes","カ":"yes","オマ":"yes",
+  "テメ":"yes","キキヤーィ":"yes",
 
-  // --- zosan（黄）---
-  "パオ":"zosan", "プア":"zosan", "パーナ":"zosan",
-  "シャーンシャーン":"zosan", "ゾーサリーヌ":"zosan", "ゾーサン":"zosan", "ンシャンシャ":"zosan",
+  // --- zosan（ゾーサン・音声／システム）---
+  "パオ":"zosan","プア":"zosan","パーナ":"zosan","シャーンシャーン":"zosan",  "べヒュー":"zosan",
+  "ゾーサン":"zosan","ンシャンシャ":"zosan","ゾーサリーヌ":"zosan","パトゥ":"zosan",
 
-  // --- number（紫）---
-  "べヒュー":"number", "ン":"number",
-  "マー":"number", "イヒ":"number", "ツ":"number", "レー":"number", "ソ":"number",
-  "ダラ":"number", "ギッ":"number", "グウ":"number", "デベ":"number", "ドオ":"number"
+  // 席ラベル（整合のために定義しておく）
+  "ウホ":"iti",
+  "イザ":"iti",
+  "ンマ":"iti",
+  "ウット":"iti"
 };
 
 
-// LEX DB（保存先）
+// ======== LEX DB（保存先） ========
 let LEXDB = {}; // { [tableId]: { seq, groups, terms:[{id,label,note,groupId,firstSeenSeq,origin}] } }
 const LEX_FILE = path.join(__dirname, "data", "lexicon.json");
-try { LEXDB = JSON.parse(await fsp.readFile(LEX_FILE, "utf8")); } catch { LEXDB = {}; }
-const saveLEX = async () => fsp.writeFile(LEX_FILE, JSON.stringify(LEXDB, null, 2), "utf8");
 
-// ======== 起動時のシード投入 ========
+try {
+  LEXDB = JSON.parse(await fsp.readFile(LEX_FILE, "utf8"));
+} catch {
+  LEXDB = {};
+}
 
-// 起動時に最低限入れておきたい語とグループ
+const saveLEX = async () =>
+  fsp.writeFile(LEX_FILE, JSON.stringify(LEXDB, null, 2), "utf8");
+
+
+// ======== 起動時シード定義 ========
 const LEX_SEED_TERMS = [
-  { label:"ナギ", groupId:"iti" },
-  { label:"ウット", groupId:"zosan" },
-  { label:"ウホ", groupId:"yes" },
-  { label:"イザ", groupId:"symbol" },
-  { label:"ンマ", groupId:"iti" },
-  { label:"シャーンシャーン", groupId:"zosan" },
-  { label:"プッチョ", groupId:"yes" },
-  { label:"ゾーサリーヌ", groupId:"symbol" },
-  { label:"ゾーサン", groupId:"zosan" },
-  { label:"パトゥ", groupId:"symbol" },
-  { label:"パオ", groupId:"yes" },
-  { label:"フザケ", groupId:"yes" },
+  { label:"ウット",         groupId:"iti"    }, 
+  { label:"ウホ",           groupId:"iti"    }, 
+  { label:"イザ",           groupId:"iti"    },
+  { label:"ンマ",           groupId:"iti"    },
+
+
+  { label:"プッチョ",       groupId:"tomuya" },
+
+    { label:"シャーンシャーン", groupId:"zosan"  },
+  { label:"ゾーサリーヌ",   groupId:"zosan"  },
+  { label:"ゾーサン",       groupId:"zosan"  }, 
+  { label:"パトゥ",         groupId:"zosan"  }, 
+  { label:"パオ",           groupId:"zosan"    }, 
+
+  { label:"フザケ",         groupId:"yes"    }, 
+    { label:"ナギ",           groupId:"yes"    },
 ];
-
-// DEFAULT テーブルに投入（なければ新規作成）
-(async function seedLexicon() {
-  const tableId = "DEFAULT";
-  const doc = getLexDoc(tableId);
-  let added = false;
-
-  for (const { label, groupId } of LEX_SEED_TERMS) {
-    // 存在チェックしてなければ作成
-    if (!doc.terms.some(t => t.label === label)) {
-      ensureTerm(tableId, label, groupId, "seed");
-      added = true;
-    }
-  }
-
-  if (added) {
-    await saveLEX();
-    console.log(`[LEXICON] 初期語彙 ${LEX_SEED_TERMS.length}件を投入しました。`);
-  } else {
-    console.log(`[LEXICON] 既存 lexicon.json に語彙があるためシード投入はスキップしました。`);
-  }
-})();
 
 
 
@@ -101,7 +115,9 @@ function getLexDoc(tableId) {
   const id  = tableId || "DEFAULT";
   const doc = (LEXDB[id] ||= { seq: 1, groups: { ...LEX_GROUPS_PRESET }, terms: [] });
   doc.groups ||= {};
-  for (const [k,v] of Object.entries(LEX_GROUPS_PRESET)) if (!doc.groups[k]) doc.groups[k] = v;
+  for (const [k,v] of Object.entries(LEX_GROUPS_PRESET)) {
+    if (!doc.groups[k]) doc.groups[k] = v;
+  }
   doc.terms ||= [];
   return doc;
 }
@@ -120,20 +136,48 @@ function ensureTerm(tableId, label, groupIdOpt, origin = "manual") {
   return t;
 }
 
-// REST: 初期表示（チラ見せ）
+// 起動時シード投入
+async function seedLexicon() {
+  const tableId = "DEFAULT";
+  const doc = getLexDoc(tableId);
+  let added = false;
+
+  for (const { label, groupId } of LEX_SEED_TERMS) {
+    if (!doc.terms.some(t => t.label === label)) {
+      ensureTerm(tableId, label, groupId, "seed");
+      added = true;
+    }
+  }
+
+  if (added) {
+    await saveLEX();
+    console.log(`[LEXICON] 初期語彙 ${LEX_SEED_TERMS.length}件を投入しました。`);
+  } else {
+    console.log(`[LEXICON] 既存 lexicon.json に語彙があるためシード投入はスキップしました。`);
+  }
+}
+
+// top-level await OK（type:module 前提）
+await seedLexicon();
+
+
+// ======== REST: 語彙ドキュメントを返す ========
 app.get("/api/lex/:tableId", (req, res) => {
   const id = String(req.params.tableId || "").trim() || "DEFAULT";
   res.json(getLexDoc(id));
 });
 
-// WSルーム
+
+// ======== WS: LEX ルーム管理 ========
 const LEX_ROOMS = new Map(); // tableId -> Set(ws)
+
 function lexJoin(tableId, ws) {
   getLexDoc(tableId); // 確実に存在させる
   if (!LEX_ROOMS.has(tableId)) LEX_ROOMS.set(tableId, new Set());
   LEX_ROOMS.get(tableId).add(ws);
   ws._lexTableId = tableId;
 }
+
 function lexLeave(ws) {
   const id = ws._lexTableId;
   if (id && LEX_ROOMS.has(id)) {
@@ -141,71 +185,70 @@ function lexLeave(ws) {
     if (LEX_ROOMS.get(id).size === 0) LEX_ROOMS.delete(id);
   }
 }
+
 function lexBroadcast(tableId, msg, except) {
   const set = LEX_ROOMS.get(tableId);
   if (!set) return;
   const s = JSON.stringify(msg);
-  for (const c of set) if (c.readyState === c.OPEN && c !== except) c.send(s);
+  for (const c of set) {
+    if (c.readyState === c.OPEN && c !== except) c.send(s);
+  }
 }
 
 
-// ===== ログから語抽出（定数群を使って辞書生成 → 正規表現で最長一致） =====
+// ======== 既知トークン集合 ＋ テキストから語を拾う ========
 
-// 1) サーバ内・非公開の用語辞書を構築（LABELS/REL/SEAT/COMMAND を全部入れる）
-function buildLexTokenSet() {
+// 1) 既知トークン集合の構築
+function buildKnownTokenSet() {
   const set = new Set();
 
   // 盤ラベル
   for (const v of LABELS.cols) set.add(v);
   for (const v of LABELS.rows) set.add(v);
 
-  // 相対方向の表示ラベル
-  for (const v of Object.values(REL_LABELS)) set.add(v);
+  // 席ラベル（表示名）
+  for (const k of Object.keys(SEAT_LABELS)) set.add(SEAT_LABELS[k]);
 
-  // 席ラベル
-  for (const v of Object.values(SEAT_LABELS)) set.add(v);
+  // 方向・相対語彙
+  for (const k of Object.keys(DIR_ALIASES)) set.add(k);
 
-  // コマンドの「表示語」（キー側の和名たち）
-  for (const k of Object.keys(COMMAND_ALIASES)) {
-    // ひらがな版などもキーに居るので全部候補に入れる
-    set.add(k);
-  }
+  // 矢印位置（チャンの3択）
+  for (const k of Object.keys(ARROW_CHOICES)) set.add(k);
 
-  // 必要なら他の固有語も追加可
-  // set.add("チケ"); set.add("フザケッチ"); set.add("シャーンシャーン"); など
+  // コマンド語
+  for (const k of Object.keys(COMMAND_ALIASES)) set.add(k);
+
+  // その他、よく出る固定語
+  set.add("ムクン");
+  set.add("トムヤムクン");
+  set.add("ンシャンシャ");
 
   return set;
 }
 
-const LEX_TOKEN_SET = buildLexTokenSet();
-const LEX_TOKEN_REGEX = new RegExp(
-  Array.from(LEX_TOKEN_SET)
-    .sort((a,b) => b.length - a.length)   // 長い語優先
-    .map(s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("|"),
-  "g"
-);
 
-// 2) 1行から非重複の語列を抽出
-function lexTokensFromLine(line) {
-  if (!line) return [];
-  const found = line.match(LEX_TOKEN_REGEX) || [];
-  // 同じ語が複数回出ても、登録は一度で十分なのでユニーク化
-  return Array.from(new Set(found));
-}
 
-// 3) 初出だけ lexicon に登録（ネタバレなし）
-const LEX_TABLE_FOR_LOG = "DEFAULT";
-async function captureLexFromLog(line, tableId = LEX_TABLE_FOR_LOG) {
+// 2) 任意のテキストから既知語を抽出し、初出なら lexicon に登録
+async function captureLexFromText(text, tableId = "DEFAULT", origin = "log") {
+  const dict = getKnownTokens();
+  const hits = new Set();
+  const line = String(text || "");
+
+  for (const token of dict) {
+    if (token && line.includes(token)) hits.add(token);
+  }
+  if (hits.size === 0) return;
+
   const doc = getLexDoc(tableId);
   let changed = false;
 
-  for (const label of lexTokensFromLine(line)) {
+  for (const label of hits) {
     if (!doc.terms.some(t => t.label === label)) {
-      ensureTerm(tableId, label, GROUP_RULES[label], "log"); // origin=log
+      ensureTerm(tableId, label, GROUP_RULES[label], origin);
       changed = true;
     }
   }
+
   if (changed) {
     await saveLEX();
     lexBroadcast(tableId, { type:"lex:update", payload: doc });
@@ -271,8 +314,8 @@ const DIR_ALIASES = {
   "バーサ": "left",  "ばーさ": "left",
   "ヘーネ": "right", "へーね": "right",
 };
-const REL_LABELS = { up: "バババ", down: "パロロ", right: "ヘーネ", left: "バーサ" };
-function showRel(rel) { return REL_LABELS[rel] || rel; }
+// 値→表示ラベル（DIR / REL / ARROW）
+function arrowValToLabel(v) { return ARROW_LABEL_FROM_VALUE[v] || v; }
 
 const DIR_LABELS = (() => {
   const out = {};
@@ -293,15 +336,42 @@ const ARROW_CHOICES = {
   "ヘネシヘネシ": "right",  "へねしへねし": "right",
 };
 
+// ==== 語彙登録ヘルパ：コマンド実行時に初見登録 ====
+
+// 表示→内部値の辞書（既存）
 const COMMAND_ALIASES = {
   "パオ": "launch",  "ぱお": "launch",
   "プア": "launch2", "ぷあ": "launch2",
   "トムヤ": "put",   "とむや": "put",
-  "ペピピ": "pickup","ぺぴぴ": "pickup",
   "チャン": "arrow", "ちゃん": "arrow",
   "オマ": "seat",    "おま": "seat",
   "ゾーサリーヌ": "name", "ぞーさりーぬ": "name",
 };
+
+// 逆引き（内部値 → 表示ラベル）を作る
+const COMMAND_LABEL_FROM_VALUE = (() => {
+  const o = {};
+  for (const [disp, val] of Object.entries(COMMAND_ALIASES)) {
+    // 既に入っていなければ代表表記を採用（ひらがな・カナ重複があるため）
+    if (!(val in o)) o[val] = disp;
+  }
+  return o;
+})();
+function cmdValToLabel(v) { return COMMAND_LABEL_FROM_VALUE[v] || v; }
+
+// 相対方向 / 矢印の逆引き（既に導入済みなら重複定義は不要）
+const REL_LABELS = { up: "バババ", down: "パロロ", right: "ヘーネ", left: "バーサ" };
+function relToLabel(v) { return REL_LABELS[v] || v; }
+
+const ARROW_LABEL_FROM_VALUE = (() => {
+  const o = {};
+  for (const [disp, val] of Object.entries(ARROW_CHOICES)) {
+    if (!(val in o)) o[val] = disp;
+  }
+  return o;
+})();
+
+
 
 function seatRelToAbs(seat, rel) {
   if (seat === "N") return ({ up: "down",  down: "up",   left: "right", right: "left" })[rel] || rel;
@@ -312,8 +382,57 @@ function seatRelToAbs(seat, rel) {
 }
 
 // （この下にゲームロジックや WS のハンドラ等を続けてください）
+// ===== ここは LABELS / SEAT_LABELS / DIR_ALIASES / ARROW_CHOICES / COMMAND_ALIASES の定義が
+// ===== すべて終わった“後”に貼り付けてください（この行より上にそれらの定数群があること）
 
-// 参考：command トークン抽出（ここまで要求に含めるという話だったので）
+
+
+// 遅延初期化で “LABELS 未定義のうちに実行される” 事故を防ぐ
+let _KNOWN_TOKENS = null;
+function getKnownTokens() {
+  if (!_KNOWN_TOKENS) _KNOWN_TOKENS = buildKnownTokenSet();
+  return _KNOWN_TOKENS;
+}
+// --- 1行のログから既知トークンだけ抜き出すヘルパ ---
+function lexTokensFromLine(line) {
+  const dict = getKnownTokens();   // 既知語セット
+  const hits = [];
+
+  const text = String(line || "");
+  if (!text) return hits;
+
+  // 「既知語のうち、含まれているもの」を素直に全部拾う
+  for (const token of dict) {
+    if (token && text.includes(token)) {
+      hits.push(token);
+    }
+  }
+  return hits;
+}
+
+async function harvestLexFromLogLine(tableId, line) {
+  const labels = lexTokensFromLine(line);
+  if (!labels.length) return;
+
+  const doc = getLexDoc(tableId);
+  let changed = false;
+
+  for (const lb of labels) {
+    const label = String(lb || "").trim();
+    if (!label) continue;
+    if (!doc.terms.some(t => t.label === label)) {
+      ensureTerm(tableId, label, GROUP_RULES[label], "log");
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    await saveLEX();
+    lexBroadcast(tableId, { type: "lex:update", payload: doc });
+  }
+}
+
+
 function extractCmdAndRest(raw) {
   const s = String(raw || "");
   const lower = s.toLowerCase();
@@ -514,16 +633,6 @@ function logTurnNow(force = false) {
 
 
 
-function broadcastAll(msg) {
-  const s = JSON.stringify(msg);
-  for (const client of wss.clients) {
-    if (client && client.readyState === client.OPEN) {
-      try { client.send(s); } catch (_) { }
-    }
-  }
-}
-
-
 // function broadcastPlayers(msg){
 //   const s = JSON.stringify(msg);
 //   for (const seat of SEATS){
@@ -586,12 +695,17 @@ function maybeStartGame() {
   }
   return false;
 }
-
+const LEX_TABLE = "DEFAULT";  // 既に定義済みなら流用
 
 function log(line) {
   state.logs.push(line);
-  broadcastAll({ type: "log", line });
+  console.log(line);
+  harvestLexFromLogLine(LEX_TABLE, line).catch(e => {
+    console.error("harvestLexFromLogLine error:", e);
+  });
 }
+
+
 
 function seatInUse(seat) { return !!state.players[seat]; }
 
@@ -899,7 +1013,7 @@ function onCommand(seat, text) {
     const abs = seatRelToAbs(seat, rel);
 
     state.board[xy.y][xy.x] = { dir: abs, owner: seat };
-    log(`${seatLabel(seat)}: トムヤ ${xyLabel(xy)} ${showRel(rel)}`);
+    log(`${seatLabel(seat)}: トムヤ ${xyLabel(xy)} ${relToLabel(rel)}`);
 
     markDone(seat);
     advanceTurn();
@@ -1000,7 +1114,7 @@ function handleLaunchCommon(seat, mode, arg) {
   if (exit === "loop") {
     // ループは撃った本人が -base
     addScore(seat, -base);
-    log(`→ チキン トムヤ${bends} ゾーサン-${base}`);
+    log(`→ フザケッチ トムヤ${bends} ゾーサン-${base}`);
   } else if (["N", "E", "S", "W"].includes(exit)) {
     if (exit === seat) {
       // 自分へ帰還：自分が +base
@@ -1098,6 +1212,7 @@ function memoBroadcast(tableId, msg, except) {
 wss.on("connection", (ws) => {
   ws.isAlive = true;
   ws.on("pong", () => (ws.isAlive = true));
+
   const id = Math.random().toString(36).slice(2, 8);
   let mySeat = null;
   let myName = id;
@@ -1108,271 +1223,285 @@ wss.on("connection", (ws) => {
   ws.send(JSON.stringify({ type: "state", data: snapshot() }));
   ws.send(JSON.stringify({ type: "hello", id }));
 
-ws.on("message", async (buf) => {
-  let m;
-  try { m = JSON.parse(String(buf)); } catch { return; }
-
-  try {
-    // ===================== LEX（語彙テーブル） =====================
-    // 参加（初期状態を返す）
-    if (m.type === "lex:join") {
-      const tableId = String(m.tableId || "").trim() || "DEFAULT";
-      lexJoin(tableId, ws);
-      ws.send(JSON.stringify({ type: "lex:init", payload: getLexDoc(tableId) }));
+  // ================== message ハンドラ ==================
+  ws.on("message", async (buf) => {
+    let m;
+    try {
+      m = JSON.parse(String(buf));
+    } catch {
       return;
     }
 
-    // 追加（手動・起動シード・ログ初出）※groupId は任意
-    if (m.type === "lex:add" || m.type === "lex:seen") {
-      const tableId = ws._lexTableId || String(m.tableId || "").trim() || "DEFAULT";
-      const label   = String(m.label || "").trim();
-      const groupId = m.groupId ? String(m.groupId) : undefined;
-      if (!label) return;
+    try {
+      // ===================== LEX（語彙テーブル） =====================
+      // 参加（初期状態を返す）
+      if (m.type === "lex:join") {
+        const tableId = String(m.tableId || "").trim() || "DEFAULT";
+        lexJoin(tableId, ws);
+        ws.send(JSON.stringify({ type: "lex:init", payload: getLexDoc(tableId) }));
+        return;
+      }
 
-      const doc    = getLexDoc(tableId);
-      const before = doc.terms.length;
-      ensureTerm(tableId, label, groupId);
-      if (doc.terms.length !== before) {
+      // 追加（手動・起動シード・ログ初出）※groupId は任意
+      if (m.type === "lex:add" || m.type === "lex:seen") {
+        const tableId = ws._lexTableId || String(m.tableId || "").trim() || "DEFAULT";
+        const label   = String(m.label || "").trim();
+        const groupId = m.groupId ? String(m.groupId) : undefined;
+        if (!label) return;
+
+        const doc    = getLexDoc(tableId);
+        const before = doc.terms.length;
+        ensureTerm(tableId, label, groupId);
+        if (doc.terms.length !== before) {
+          await saveLEX();
+          // 自分以外へ配信（自分はローカルで即時反映している想定）
+          lexBroadcast(tableId, { type: "lex:update", payload: doc }, ws);
+        }
+        return;
+      }
+
+      // ノート更新（右セル）
+      if (m.type === "lex:updateNote") {
+        const tableId = ws._lexTableId || "DEFAULT";
+        const doc = getLexDoc(tableId);
+        const id  = String(m.id || "");
+        const t   = doc.terms.find(x => x.id === id);
+        if (!t) return;
+        t.note = String(m.note || "");
         await saveLEX();
-        // 自分以外へ配信（自分はローカルで即時反映している想定）
         lexBroadcast(tableId, { type: "lex:update", payload: doc }, ws);
-      }
-      return;
-    }
-
-    // ノート更新（右セル）
-    if (m.type === "lex:updateNote") {
-      const tableId = ws._lexTableId || "DEFAULT";
-      const doc = getLexDoc(tableId);
-      const id  = String(m.id || "");
-      const t   = doc.terms.find(x => x.id === id);
-      if (!t) return;
-      t.note = String(m.note || "");
-      await saveLEX();
-      lexBroadcast(tableId, { type: "lex:update", payload: doc }, ws);
-      return;
-    }
-
-    // グループ色変更
-    if (m.type === "lex:setGroupColor") {
-      const tableId = ws._lexTableId || "DEFAULT";
-      const doc   = getLexDoc(tableId);
-      const gid   = String(m.groupId || "");
-      const color = String(m.color || "").trim();
-      if (!doc.groups[gid] || !color) return;
-      doc.groups[gid].color = color;
-      await saveLEX();
-      lexBroadcast(tableId, { type: "lex:update", payload: doc }, ws);
-      return;
-    }
-
-    // 単語の所属グループ変更
-    if (m.type === "lex:setGroup") {
-      const tableId = ws._lexTableId || "DEFAULT";
-      const doc = getLexDoc(tableId);
-      const id  = String(m.id || "");
-      const gid = String(m.groupId || "");
-      const t   = doc.terms.find(x => x.id === id);
-      if (!t || !doc.groups[gid]) return;
-      t.groupId = gid;
-      await saveLEX();
-      lexBroadcast(tableId, { type: "lex:update", payload: doc }, ws);
-      return;
-    }
-
-    // ===================== MEMO（共有メモ） =====================
-    if (m.type === "memo:join") {
-      const tableId = String(m.tableId || "").trim() || "DEFAULT";
-      memoJoin(tableId, ws);
-      if (!MEMODB[tableId]) MEMODB[tableId] = { text: "", updatedAt: new Date().toISOString() };
-      ws.send(JSON.stringify({ type: "memo:init", payload: MEMODB[tableId] }));
-      return;
-    }
-
-    if (m.type === "memo:patch") {
-      const tableId = ws._memoTableId;
-      if (!tableId) return; // join 前
-      const text = String(m.text || "");
-      MEMODB[tableId] = { text, updatedAt: new Date().toISOString() };
-      await saveMemoDB();
-      memoBroadcast(tableId, { type: "memo:update", payload: MEMODB[tableId] }, ws);
-      return;
-    }
-
-    // ===================== セッション復帰 =====================
-    if (m.type === "resume") {
-      myCid = String(m.cid || "").slice(0, 64);
-
-      let found = null;
-      for (const s of SEATS) {
-        const p = state.players[s];
-        if (p && p.cid === myCid) { found = s; break; }
-      }
-
-      if (found) {
-        const g = ghosts.get(myCid);
-        if (g) { clearTimeout(g.timer); ghosts.delete(myCid); }
-
-        mySeat = found;
-        state.players[mySeat].ws = ws;
-
-        ws.send(JSON.stringify({ type: "you", seat: mySeat }));
-        broadcastAll({ type: "state", data: snapshot() });
-      }
-      return;
-    }
-
-    // ===================== ゲームユーティリティ =====================
-    if (m.type === "resetGame") {
-      for (const s of SEATS) if (state.players[s]) state.players[s].score = 0;
-
-      if (!everyoneSeated()) {
-        // ロビーに戻すだけ
-        state.board = Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
-        state.arrows = {};
-        state.phaseActions = {};
-        state.turnIdx = 0;
-        state.reverseActive = false;
-        state.reverseUsed = false;
-        state.lastTurnSeat = null;
-        state.phase = "lobby";
-
-        log("— パオシャーンシャーン —");
-        broadcastAll({ type: "state", data: snapshot() });
         return;
       }
 
-      resetBoard();
-      log("— パオシャーンシャーン —");
-      logTurnNow(true);
-      broadcastAll({ type: "state", data: snapshot() });
-      return;
-    }
-
-    // ===================== プレイヤー基本操作 =====================
-    if (m.type === "name") {
-      myName = String(m.name || "").slice(0, 20) || myName;
-      if (mySeat && state.players[mySeat]) state.players[mySeat].name = myName;
-      broadcastAll({ type: "state", data: snapshot() });
-      return;
-    }
-
-    if (m.type === "seat") {
-      const want = resolveSeat(m.seat);
-      if (!SEATS.includes(want)) {
-        throw new Error(`オマ ${SEAT_LABELS.N}/${SEAT_LABELS.E}/${SEAT_LABELS.S}/${SEAT_LABELS.W} `);
-      }
-
-      // 同じ席へ再入室（ソケット差し替え）
-      if (mySeat === want && state.players[want]) {
-        state.players[want].ws = ws;
-        ws.send(JSON.stringify({ type: "you", seat: mySeat }));
-        broadcastAll({ type: "state", data: snapshot() });
-        maybeStartGame();
+      // グループ色変更
+      if (m.type === "lex:setGroupColor") {
+        const tableId = ws._lexTableId || "DEFAULT";
+        const doc   = getLexDoc(tableId);
+        const gid   = String(m.groupId || "");
+        const color = String(m.color || "").trim();
+        if (!doc.groups[gid] || !color) return;
+        doc.groups[gid].color = color;
+        await saveLEX();
+        lexBroadcast(tableId, { type: "lex:update", payload: doc }, ws);
         return;
       }
 
-      // 既占有席
-      if (seatInUse(want)) {
-        const p = state.players[want];
-        if (!p) throw new Error("フザケ オマ");
+      // 単語の所属グループ変更
+      if (m.type === "lex:setGroup") {
+        const tableId = ws._lexTableId || "DEFAULT";
+        const doc = getLexDoc(tableId);
+        const id  = String(m.id || "");
+        const gid = String(m.groupId || "");
+        const t   = doc.terms.find(x => x.id === id);
+        if (!t || !doc.groups[gid]) return;
+        t.groupId = gid;
+        await saveLEX();
+        lexBroadcast(tableId, { type: "lex:update", payload: doc }, ws);
+        return;
+      }
 
-        // 同一CIDなら奪還可
-        if (p.cid === (myCid || "")) {
-          mySeat = want;
-          myName = p.name || myName;
-          if (p.dcTimer) { clearTimeout(p.dcTimer); delete p.dcTimer; }
-          p.ws = ws;
-          p.disconnectedAt = null;
+      // ===================== MEMO（共有メモ） =====================
+      if (m.type === "memo:join") {
+        const tableId = String(m.tableId || "").trim() || "DEFAULT";
+        memoJoin(tableId, ws);
+        if (!MEMODB[tableId]) {
+          MEMODB[tableId] = { text: "", updatedAt: new Date().toISOString() };
+        }
+        ws.send(JSON.stringify({ type: "memo:init", payload: MEMODB[tableId] }));
+        return;
+      }
+
+      if (m.type === "memo:patch") {
+        const tableId = ws._memoTableId;
+        if (!tableId) return; // join 前
+        const text = String(m.text || "");
+        MEMODB[tableId] = { text, updatedAt: new Date().toISOString() };
+        await saveMemoDB();
+        memoBroadcast(tableId, { type: "memo:update", payload: MEMODB[tableId] }, ws);
+        return;
+      }
+
+      // ===================== セッション復帰 =====================
+      if (m.type === "resume") {
+        myCid = String(m.cid || "").slice(0, 64);
+
+        let found = null;
+        for (const s of SEATS) {
+          const p = state.players[s];
+          if (p && p.cid === myCid) { found = s; break; }
+        }
+
+        if (found) {
+          const g = ghosts.get(myCid);
+          if (g) { clearTimeout(g.timer); ghosts.delete(myCid); }
+
+          mySeat = found;
+          state.players[mySeat].ws = ws;
+
           ws.send(JSON.stringify({ type: "you", seat: mySeat }));
+          broadcastAll({ type: "state", data: snapshot() });
+        }
+        return;
+      }
+
+      // ===================== ゲームユーティリティ =====================
+      if (m.type === "resetGame") {
+        for (const s of SEATS) if (state.players[s]) state.players[s].score = 0;
+
+        if (!everyoneSeated()) {
+          // ロビーに戻すだけ
+          state.board = Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
+          state.arrows = {};
+          state.phaseActions = {};
+          state.turnIdx = 0;
+          state.reverseActive = false;
+          state.reverseUsed = false;
+          state.lastTurnSeat = null;
+          state.phase = "lobby";
+
+          log("— パオシャーンシャーン —");
           broadcastAll({ type: "state", data: snapshot() });
           return;
         }
 
-        // 一時切断猶予中
-        if (!p.ws && p.disconnectedAt && Date.now() - p.disconnectedAt < RECONNECT_GRACE_MS) {
-          throw new Error("フザケ オマ（再接続待ち）");
-        }
-
-        throw new Error("フザケ オマ");
-      }
-
-      // 席移動：前席を開放
-      if (mySeat && mySeat !== want) {
-        const prev = mySeat;
-        const prevName = state.players[prev]?.name || myName || "";
-        delete state.players[prev];
-        log(`${seatLabel(prev)}: ${prevName} ペピピ オマ`);
-      }
-
-      mySeat = want;
-      state.players[mySeat] = {
-        id,
-        cid: myCid || id,
-        name: myName,
-        ws,
-        score: 0,
-      };
-
-      log(`${seatLabel(mySeat)}: ${myName} プッチョオマ`);
-
-      ws.send(JSON.stringify({ type: "you", seat: mySeat }));
-      broadcastAll({ type: "state", data: snapshot() });
-      maybeStartGame();
-
-      if (state.phase !== "lobby" && SEAT_ORDER[state.turnIdx] === mySeat) {
+        resetBoard();
+        log("— パオシャーンシャーン —");
         logTurnNow(true);
         broadcastAll({ type: "state", data: snapshot() });
+        return;
       }
-      return;
+
+      // ===================== プレイヤー基本操作 =====================
+      if (m.type === "name") {
+        myName = String(m.name || "").slice(0, 20) || myName;
+        if (mySeat && state.players[mySeat]) state.players[mySeat].name = myName;
+        broadcastAll({ type: "state", data: snapshot() });
+        return;
+      }
+
+      if (m.type === "seat") {
+        const want = resolveSeat(m.seat);
+        if (!SEATS.includes(want)) {
+          throw new Error(`オマ ${SEAT_LABELS.N}/${SEAT_LABELS.E}/${SEAT_LABELS.S}/${SEAT_LABELS.W} `);
+        }
+
+        // 同じ席へ再入室（ソケット差し替え）
+        if (mySeat === want && state.players[want]) {
+          state.players[want].ws = ws;
+          ws.send(JSON.stringify({ type: "you", seat: mySeat }));
+          broadcastAll({ type: "state", data: snapshot() });
+          maybeStartGame();
+          return;
+        }
+
+        // 既占有席
+        if (seatInUse(want)) {
+          const p = state.players[want];
+          if (!p) throw new Error("フザケ オマ");
+
+          // 同一CIDなら奪還可
+          if (p.cid === (myCid || "")) {
+            mySeat = want;
+            myName = p.name || myName;
+            if (p.dcTimer) { clearTimeout(p.dcTimer); delete p.dcTimer; }
+            p.ws = ws;
+            p.disconnectedAt = null;
+            ws.send(JSON.stringify({ type: "you", seat: mySeat }));
+            broadcastAll({ type: "state", data: snapshot() });
+            return;
+          }
+
+          // 一時切断猶予中
+          if (!p.ws && p.disconnectedAt && Date.now() - p.disconnectedAt < RECONNECT_GRACE_MS) {
+            throw new Error("フザケ オマ（再接続待ち）");
+          }
+
+          throw new Error("フザケ オマ");
+        }
+
+        // 席移動：前席を開放
+        if (mySeat && mySeat !== want) {
+          const prev = mySeat;
+          const prevName = state.players[prev]?.name || myName || "";
+          delete state.players[prev];
+          log(`${seatLabel(prev)}: ${prevName} ペピピ オマ`);
+        }
+
+        mySeat = want;
+        state.players[mySeat] = {
+          id,
+          cid: myCid || id,
+          name: myName,
+          ws,
+          score: 0,
+        };
+
+        log(`${seatLabel(mySeat)}: ${myName} プッチョオマ`);
+
+        ws.send(JSON.stringify({ type: "you", seat: mySeat }));
+        broadcastAll({ type: "state", data: snapshot() });
+        maybeStartGame();
+
+        if (state.phase !== "lobby" && SEAT_ORDER[state.turnIdx] === mySeat) {
+          logTurnNow(true);
+          broadcastAll({ type: "state", data: snapshot() });
+        }
+        return;
+      }
+
+      // コマンド（ゲーム入力）
+      if (m.type === "cmd") {
+        if (!mySeat) throw new Error("シャーンシャーン オマ オメ");
+        onCommand(mySeat, m.text || "");
+        ws.send(JSON.stringify({ type: "ok", for: "cmd" }));
+        return;
+      }
+
+      // ログ取得
+      if (m.type === "logs") {
+        const end   = Math.max(0, Math.min(state.logs.length, Number(m.end) || 0));
+        const limit = Math.max(1, Math.min(200, Number(m.limit) || 120));
+        const start = Math.max(0, end - limit);
+        const lines = state.logs.slice(start, end);
+        ws.send(JSON.stringify({ type: "logs", start, end, total: state.logs.length, lines }));
+        return;
+      }
+
+      // 全面リセット
+      if (m.type === "reset") {
+        hardReset();
+        return;
+      }
+
+    } catch (err) {
+      // ★ エラーメッセージから語彙抽出
+      await captureLexFromText(String(err.message || err));
+      ws.send(JSON.stringify({
+        type: "error",
+        message: String(err.message || err)
+      }));
     }
+  }); // ← ここで ws.on("message") を閉じるのがポイント
 
-    // コマンド（ゲーム入力）
-    if (m.type === "cmd") {
-      if (!mySeat) throw new Error("シャーンシャーン オマ オメ");
-      onCommand(mySeat, m.text || "");
-      ws.send(JSON.stringify({ type: "ok", for: "cmd" }));
-      return;
-    }
-
-    // ログ取得
-    if (m.type === "logs") {
-      const end   = Math.max(0, Math.min(state.logs.length, Number(m.end) || 0));
-      const limit = Math.max(1, Math.min(200, Number(m.limit) || 120));
-      const start = Math.max(0, end - limit);
-      const lines = state.logs.slice(start, end);
-      ws.send(JSON.stringify({ type: "logs", start, end, total: state.logs.length, lines }));
-      return;
-    }
-
-    // 全面リセット
-    if (m.type === "reset") {
-      hardReset();
-      return;
-    }
-
-  } catch (err) {
-    ws.send(JSON.stringify({ type: "error", message: String(err.message || err) }));
-  }
-});
-
-
-
+  // ================== close ハンドラ ==================
   ws.on("close", () => {
     if (!mySeat) return;
     lexLeave(ws);
     memoLeave(ws);
     const seat = mySeat;
     const info = state.players[seat];
-    const oldWs = info?.ws || ws;
     const cidKey = info?.cid;
+
     if (info) {
       info.disconnectedAt = Date.now();
       info.ws = null;
     }
+
     const timer = setTimeout(() => {
       const p = state.players[seat];
-      const stillWaiting = p && p.ws == null && p.disconnectedAt && (Date.now() - p.disconnectedAt >= CLOSE_GRACE_MS);
+      const stillWaiting =
+        p && p.ws == null && p.disconnectedAt &&
+        (Date.now() - p.disconnectedAt >= CLOSE_GRACE_MS);
       if (stillWaiting) {
         const name = p?.name || "";
         log(`${seatLabel(seat)}: ${name ? name + " " : ""}ぺピピ オマ`);
@@ -1388,12 +1517,8 @@ ws.on("message", async (buf) => {
 
     mySeat = null;
   });
-
-
-
-
-
 });
+
 
 setInterval(() => {
   wss.clients.forEach((ws) => {
@@ -1407,7 +1532,19 @@ process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e))
 process.on("uncaughtException", (e) => { console.error("uncaughtException:", e); process.exit(1); });
 
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => {
-  console.log("listening on http://localhost:" + PORT, "NODE_ENV=", process.env.NODE_ENV);
-});
-server.on("error", (e) => console.error("listen error:", e));
+// 既存の listen を消して、代わりに boot() を定義
+async function boot() {
+  // data ディレクトリの確保（未作成なら）
+  await fsp.mkdir(path.join(__dirname, "data"), { recursive: true }).catch(() => {});
+
+  // ★ シード完了を待つ（ここが肝）
+  await seedLexicon();
+
+  // ここから起動
+  const PORT = process.env.PORT || 8080;
+  server.listen(PORT, () => {
+    console.log("listening on http://localhost:" + PORT, "NODE_ENV=", process.env.NODE_ENV);
+  });
+  server.on("error", (e) => console.error("listen error:", e));
+}
+boot();

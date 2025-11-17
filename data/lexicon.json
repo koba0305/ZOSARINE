@@ -1,151 +1,376 @@
 {
-  "TEST": {
-    "terms": [
-      {
-        "id": "uh6g9c53",
-        "label": "マー",
-        "note": "多分1...",
-        "firstSeenSeq": 2
-      },
-      {
-        "id": "r8ivrqbl",
-        "label": "イヒ",
-        "note": "",
-        "firstSeenSeq": 3
-      },
-      {
-        "id": "g5gr110n",
-        "label": "ツ",
-        "note": "",
-        "firstSeenSeq": 4
-      },
-      {
-        "id": "t8z4v1du",
-        "label": "レー",
-        "note": "",
-        "firstSeenSeq": 5
-      },
-      {
-        "id": "4hdy8cj3",
-        "label": "ソ",
-        "note": "",
-        "firstSeenSeq": 6
-      },
-      {
-        "id": "9rqmgpvk",
-        "label": "ダラ",
-        "note": "",
-        "firstSeenSeq": 7
-      },
-      {
-        "id": "mow9vl9v",
-        "label": "ギッ",
-        "note": "",
-        "firstSeenSeq": 8
-      },
-      {
-        "id": "mki6bc15",
-        "label": "グウ",
-        "note": "",
-        "firstSeenSeq": 9
-      },
-      {
-        "id": "uqyn1sc1",
-        "label": "デベ",
-        "note": "",
-        "firstSeenSeq": 10
-      },
-      {
-        "id": "3wkwkec0",
-        "label": "ドオ",
-        "note": "",
-        "firstSeenSeq": 11
-      },
-      {
-        "id": "3hzmxl6g",
-        "label": "ナギ",
-        "note": "",
-        "firstSeenSeq": 12
-      },
-      {
-        "id": "8gxo6js2",
-        "label": "ウット",
-        "note": "",
-        "firstSeenSeq": 13
-      },
-      {
-        "id": "acnsewvl",
-        "label": "ウホ",
-        "note": "",
-        "firstSeenSeq": 14
-      },
-      {
-        "id": "tes36e8h",
-        "label": "イザ",
-        "note": "",
-        "firstSeenSeq": 15
-      },
-      {
-        "id": "k8y6qsz7",
-        "label": "ンマ",
-        "note": "",
-        "firstSeenSeq": 16
-      },
-      {
-        "id": "f4y2068v",
-        "label": "シャーンシャーン",
-        "note": "",
-        "firstSeenSeq": 17
-      },
-      {
-        "id": "8wy843sh",
-        "label": "オマ",
-        "note": "",
-        "firstSeenSeq": 18
-      },
-      {
-        "id": "x6r4qzlt",
-        "label": "プッチョ",
-        "note": "",
-        "firstSeenSeq": 19
-      },
-      {
-        "id": "s2zmep89",
-        "label": "フザケ",
-        "note": "",
-        "firstSeenSeq": 20
-      },
-      {
-        "id": "99g7hvvh",
-        "label": "チケ",
-        "note": "",
-        "firstSeenSeq": 21
-      },
-      {
-        "id": "n5jgmxrb",
-        "label": "フザケッチ",
-        "note": "",
-        "firstSeenSeq": 22
-      }
-    ],
-    "seq": 22,
+  "DEFAULT": {
+    "seq": 19,
     "groups": {
-      "red": {
-        "name": "赤",
+      "symbol": {
+        "name": "トムヤ",
         "color": "#ff4d4f"
       },
-      "blue": {
-        "name": "青",
+      "iti": {
+        "name": "チャン",
         "color": "#4096ff"
       },
-      "green": {
-        "name": "緑",
+      "zosan": {
+        "name": "ゾーサン",
+        "color": "#fadb14"
+      },
+      "yes": {
+        "name": "テメ",
         "color": "#52c41a"
       },
-      "yellow": {
-        "name": "黄",
-        "color": "#fadb14"
+      "number": {
+        "name": "べヒュー",
+        "color": "#9254de"
       }
-    }
+    },
+    "terms": [
+      {
+        "id": "0qejjfxg",
+        "label": "ナギ",
+        "note": "",
+        "groupId": "iti",
+        "firstSeenSeq": 2,
+        "origin": "seed"
+      },
+      {
+        "id": "5l4v84lr",
+        "label": "ウット",
+        "note": "",
+        "groupId": "zosan",
+        "firstSeenSeq": 3,
+        "origin": "seed"
+      },
+      {
+        "id": "h844ib4n",
+        "label": "ウホ",
+        "note": "",
+        "groupId": "yes",
+        "firstSeenSeq": 4,
+        "origin": "seed"
+      },
+      {
+        "id": "wn0u3ujn",
+        "label": "イザ",
+        "note": "",
+        "groupId": "symbol",
+        "firstSeenSeq": 5,
+        "origin": "seed"
+      },
+      {
+        "id": "23x3w9kz",
+        "label": "ンマ",
+        "note": "",
+        "groupId": "iti",
+        "firstSeenSeq": 6,
+        "origin": "seed"
+      },
+      {
+        "id": "xp6njxxl",
+        "label": "シャーンシャーン",
+        "note": "",
+        "groupId": "zosan",
+        "firstSeenSeq": 7,
+        "origin": "seed"
+      },
+      {
+        "id": "jyoae45w",
+        "label": "プッチョ",
+        "note": "",
+        "groupId": "yes",
+        "firstSeenSeq": 8,
+        "origin": "seed"
+      },
+      {
+        "id": "atk5o0qw",
+        "label": "ゾーサリーヌ",
+        "note": "",
+        "groupId": "symbol",
+        "firstSeenSeq": 9,
+        "origin": "seed"
+      },
+      {
+        "id": "mcmjtj0v",
+        "label": "ゾーサン",
+        "note": "",
+        "groupId": "zosan",
+        "firstSeenSeq": 10,
+        "origin": "seed"
+      },
+      {
+        "id": "g6a62bqa",
+        "label": "パトゥ",
+        "note": "",
+        "groupId": "symbol",
+        "firstSeenSeq": 11,
+        "origin": "seed"
+      },
+      {
+        "id": "sblk7e11",
+        "label": "パオ",
+        "note": "",
+        "groupId": "yes",
+        "firstSeenSeq": 12,
+        "origin": "seed"
+      },
+      {
+        "id": "ywwu463q",
+        "label": "フザケ",
+        "note": "",
+        "groupId": "yes",
+        "firstSeenSeq": 13,
+        "origin": "seed"
+      },
+      {
+        "id": "2jtw8776",
+        "label": "オマ",
+        "note": "",
+        "groupId": "yes",
+        "firstSeenSeq": 14,
+        "origin": "manual"
+      },
+      {
+        "id": "vv7hdhv8",
+        "label": "ダラ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 15,
+        "origin": "manual"
+      },
+      {
+        "id": "5ja4tngu",
+        "label": "トムヤ",
+        "note": "",
+        "groupId": "symbol",
+        "firstSeenSeq": 16,
+        "origin": "manual"
+      },
+      {
+        "id": "sptvsbdb",
+        "label": "イヒ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 17,
+        "origin": "manual"
+      },
+      {
+        "id": "xmrytw0s",
+        "label": "ギッ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 18,
+        "origin": "manual"
+      },
+      {
+        "id": "x56ngvma",
+        "label": "バババ",
+        "note": "",
+        "groupId": "iti",
+        "firstSeenSeq": 19,
+        "origin": "manual"
+      }
+    ]
+  },
+  "TEST": {
+    "seq": 23,
+    "groups": {
+      "symbol": {
+        "name": "トムヤ",
+        "color": "#ff4d4f"
+      },
+      "iti": {
+        "name": "チャン",
+        "color": "#4096ff"
+      },
+      "zosan": {
+        "name": "ゾーサン",
+        "color": "#fadb14"
+      },
+      "yes": {
+        "name": "テメ",
+        "color": "#52c41a"
+      },
+      "number": {
+        "name": "べヒュー",
+        "color": "#9254de"
+      }
+    },
+    "terms": [
+      {
+        "id": "f077t03a",
+        "label": "マー",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 2,
+        "origin": "manual"
+      },
+      {
+        "id": "vr5ksq5x",
+        "label": "イヒ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 3,
+        "origin": "manual"
+      },
+      {
+        "id": "rvbp8yt4",
+        "label": "ツ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 4,
+        "origin": "manual"
+      },
+      {
+        "id": "8bm5z979",
+        "label": "レー",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 5,
+        "origin": "manual"
+      },
+      {
+        "id": "e2hcgi6o",
+        "label": "ソ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 6,
+        "origin": "manual"
+      },
+      {
+        "id": "mqiq1wly",
+        "label": "ダラ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 7,
+        "origin": "manual"
+      },
+      {
+        "id": "68h03lzs",
+        "label": "ギッ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 8,
+        "origin": "manual"
+      },
+      {
+        "id": "yicdnvyv",
+        "label": "グウ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 9,
+        "origin": "manual"
+      },
+      {
+        "id": "mboetcmr",
+        "label": "デベ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 10,
+        "origin": "manual"
+      },
+      {
+        "id": "gndgy1e8",
+        "label": "ドオ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 11,
+        "origin": "manual"
+      },
+      {
+        "id": "5e7ond5c",
+        "label": "ナギ",
+        "note": "",
+        "groupId": "yes",
+        "firstSeenSeq": 12,
+        "origin": "manual"
+      },
+      {
+        "id": "zfi9kv52",
+        "label": "フザケ",
+        "note": "",
+        "groupId": "yes",
+        "firstSeenSeq": 13,
+        "origin": "manual"
+      },
+      {
+        "id": "uimi3f9p",
+        "label": "ウット",
+        "note": "",
+        "groupId": "zosan",
+        "firstSeenSeq": 14,
+        "origin": "manual"
+      },
+      {
+        "id": "yfs36t8s",
+        "label": "シャーンシャーン",
+        "note": "",
+        "groupId": "zosan",
+        "firstSeenSeq": 15,
+        "origin": "manual"
+      },
+      {
+        "id": "dsaepa8r",
+        "label": "ゾーサリーヌ",
+        "note": "",
+        "groupId": "zosan",
+        "firstSeenSeq": 16,
+        "origin": "manual"
+      },
+      {
+        "id": "wy1kkk47",
+        "label": "ゾーサン",
+        "note": "",
+        "groupId": "zosan",
+        "firstSeenSeq": 17,
+        "origin": "manual"
+      },
+      {
+        "id": "nynj6wya",
+        "label": "パオ",
+        "note": "",
+        "groupId": "zosan",
+        "firstSeenSeq": 18,
+        "origin": "manual"
+      },
+      {
+        "id": "s9s1tnrw",
+        "label": "パトゥ",
+        "note": "",
+        "groupId": "zosan",
+        "firstSeenSeq": 19,
+        "origin": "manual"
+      },
+      {
+        "id": "rjkpxtv3",
+        "label": "ウホ",
+        "note": "",
+        "groupId": "symbol",
+        "firstSeenSeq": 20,
+        "origin": "manual"
+      },
+      {
+        "id": "tdlmamms",
+        "label": "イザ",
+        "note": "",
+        "groupId": "symbol",
+        "firstSeenSeq": 21,
+        "origin": "manual"
+      },
+      {
+        "id": "dsqlsalo",
+        "label": "ンマ",
+        "note": "",
+        "groupId": "symbol",
+        "firstSeenSeq": 22,
+        "origin": "manual"
+      },
+      {
+        "id": "b12h7cjp",
+        "label": "プッチョ",
+        "note": "",
+        "groupId": "symbol",
+        "firstSeenSeq": 23,
+        "origin": "manual"
+      }
+    ]
   }
 }
