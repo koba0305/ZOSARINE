@@ -27,13 +27,18 @@
     background:#000; color:#fff; border:1px solid #fff; border-radius:6px;
     padding:6px 8px; resize:none; overflow:hidden;
   }
+  #table {
+  display: none !important;
+  /* デフォルトかTESTかどうかのデバック表示 */
+}
+
 </style>
 </head>
 <body>
 <header>
   <strong>シャーンシャーンゾーサリーヌパトゥ</strong>
   <span id="table" class="badge"></span>
-  <span id="status" class="muted">接続中…</span>
+  <span id="status" class="muted"></span>
 </header>
 
 <main id="groups"></main>
@@ -46,7 +51,6 @@
   const statusEl = document.getElementById('status');
 
   ws.addEventListener('open', () => {
-    statusEl.textContent = '接続中 ✓';
     ws.send(JSON.stringify({ type:'lex:join', tableId }));
   });
 
@@ -56,8 +60,6 @@
     if (m.type === 'lex:init')  render(m.payload);
     if (m.type === 'lex:update') render(m.payload);
   });
-
-  ws.addEventListener('close', () => statusEl.textContent = '切断（オフライン）');
 
   function autoGrow(ta){
     ta.style.height = 'auto';
@@ -140,7 +142,7 @@
       groupsEl.appendChild(sec);
     }
 
-    statusEl.textContent = '同期 ✓';
+
   }
 
   // RESTの保険（WSが失敗しても HTTP で一度は描画する）
