@@ -1518,8 +1518,6 @@ wss.on("connection", (ws) => {
     mySeat = null;
   });
 });
-
-
 setInterval(() => {
   wss.clients.forEach((ws) => {
     if (!ws.isAlive) return ws.terminate();
@@ -1529,22 +1527,35 @@ setInterval(() => {
 }, 30000);
 
 process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e));
-process.on("uncaughtException", (e) => { console.error("uncaughtException:", e); process.exit(1); });
+process.on("uncaughtException", (e) => {
+  console.error("uncaughtException:", e);
+  process.exit(1);
+});
 
 const PORT = process.env.PORT || 8080;
-// 既存の listen を消して、代わりに boot() を定義
+
+// ★ healthz はここで定義してしまってOK（listen より前ならどこでもいい）
+app.get("/healthz", (req, res) => {
+  res.status(200).send("ok");
+});
+
+// ★ 起動処理をひとまとめ
 async function boot() {
-  // data ディレクトリの確保（未作成なら）
+  // data ディレクトリの確保
   await fsp.mkdir(path.join(__dirname, "data"), { recursive: true }).catch(() => {});
 
-  // ★ シード完了を待つ（ここが肝）
+  // シードが必要ならここで待つ
   await seedLexicon();
 
-  // ここから起動
-  const PORT = process.env.PORT || 8080;
+  // ★ listen はここで一回だけ
   server.listen(PORT, () => {
-    console.log("listening on http://localhost:" + PORT, "NODE_ENV=", process.env.NODE_ENV);
+    console.log(`listening on http://localhost:${PORT}`, "NODE_ENV=", process.env.NODE_ENV);
   });
+
   server.on("error", (e) => console.error("listen error:", e));
 }
-boot();
+
+boot().catch((e) => {
+  console.error("boot error:", e);
+  process.exit(1);
+});
