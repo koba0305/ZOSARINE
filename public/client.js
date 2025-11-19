@@ -5,7 +5,8 @@
 const WS_HOST = location.hostname.endsWith('github.io')
   ? 'your-app.onrender.com'
   : location.host;
-const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + WS_HOST + '/ws';
+const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+
 
 const CID_KEY = "zs_cid";
 const store = sessionStorage;
