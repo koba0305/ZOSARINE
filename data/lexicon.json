@@ -18,18 +18,18 @@
         "name": "テメ",
         "color": "#52c41a"
       },
-      "number": {
-        "name": "キキヤーィ",
-        "color": "#9254de"
-      },
       "iti": {
         "name": "べヒュー",
+        "color": "#9254de"
+      },
+      "number": {
+        "name": "キキヤーィ",
         "color": "#de5492ff"
       }
     },
     "terms": [
       {
-        "id": "ub4qbclt",
+        "id": "8q1d6mfh",
         "label": "ウット",
         "note": "",
         "groupId": "iti",
@@ -37,7 +37,7 @@
         "origin": "seed"
       },
       {
-        "id": "dzvn3758",
+        "id": "3kyxmdj6",
         "label": "ウホ",
         "note": "",
         "groupId": "iti",
@@ -45,7 +45,7 @@
         "origin": "seed"
       },
       {
-        "id": "mdq26lgp",
+        "id": "lu4wv53p",
         "label": "イザ",
         "note": "",
         "groupId": "iti",
@@ -53,7 +53,7 @@
         "origin": "seed"
       },
       {
-        "id": "pkqgpzry",
+        "id": "ycqiv64a",
         "label": "ンマ",
         "note": "",
         "groupId": "iti",
@@ -61,7 +61,7 @@
         "origin": "seed"
       },
       {
-        "id": "jl4mfkl9",
+        "id": "1zy9g6zj",
         "label": "プッチョ",
         "note": "",
         "groupId": "tomuya",
@@ -69,7 +69,7 @@
         "origin": "seed"
       },
       {
-        "id": "d6q7782f",
+        "id": "jy72aufw",
         "label": "シャーンシャーン",
         "note": "",
         "groupId": "zosan",
@@ -77,7 +77,7 @@
         "origin": "seed"
       },
       {
-        "id": "ney6un14",
+        "id": "ae3sebyh",
         "label": "ゾーサリーヌ",
         "note": "",
         "groupId": "zosan",
@@ -85,7 +85,7 @@
         "origin": "seed"
       },
       {
-        "id": "qrhc02vg",
+        "id": "fd3utowy",
         "label": "ゾーサン",
         "note": "",
         "groupId": "zosan",
@@ -93,7 +93,7 @@
         "origin": "seed"
       },
       {
-        "id": "snkw1zfk",
+        "id": "s85v4zp1",
         "label": "パトゥ",
         "note": "",
         "groupId": "zosan",
@@ -101,7 +101,7 @@
         "origin": "seed"
       },
       {
-        "id": "t93hgy8o",
+        "id": "8w20k0cd",
         "label": "パオ",
         "note": "",
         "groupId": "zosan",
@@ -109,7 +109,7 @@
         "origin": "seed"
       },
       {
-        "id": "hff2zooy",
+        "id": "twb43jkx",
         "label": "フザケ",
         "note": "",
         "groupId": "yes",
@@ -117,7 +117,7 @@
         "origin": "seed"
       },
       {
-        "id": "1kf4e9s0",
+        "id": "lm92vrqi",
         "label": "ナギ",
         "note": "",
         "groupId": "yes",

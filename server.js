@@ -39,8 +39,8 @@ const LEX_GROUPS_PRESET = {
   tyann:    { name: "チャン",   color: "#4096ff" },  // 位置・方向系
   zosan:  { name: "ゾーサン", color: "#fadb14" },  // ゾウ・音声・システム系
   yes:    { name: "テメ",     color: "#52c41a" },  // 行為・感情・意志系
-  number: { name: "キキヤーィ", color: "#9254de" },   // 数・構造系
-  iti: { name: "べヒュー", color: "#de5492ff" }   // 数・構造系
+  iti: { name: "べヒュー", color: "#9254de" } ,  // 数・構造系
+  number: { name: "キキヤーィ", color: "#de5492ff" }   // 数・構造系
 };
 const DEFAULT_GROUP_ID = "symbol";
 
