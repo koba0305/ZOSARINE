@@ -1,6 +1,6 @@
 {
   "DEFAULT": {
-    "seq": 13,
+    "seq": 27,
     "groups": {
       "tomuya": {
         "name": "トムヤ",
@@ -63,7 +63,7 @@
       {
         "id": "1zy9g6zj",
         "label": "プッチョ",
-        "note": "",
+        "note": "てst",
         "groupId": "tomuya",
         "firstSeenSeq": 6,
         "origin": "seed"
@@ -123,6 +123,118 @@
         "groupId": "yes",
         "firstSeenSeq": 13,
         "origin": "seed"
+      },
+      {
+        "id": "v57n77b5",
+        "label": "オマ",
+        "note": "",
+        "groupId": "yes",
+        "firstSeenSeq": 14,
+        "origin": "log"
+      },
+      {
+        "id": "3ubl1vb7",
+        "label": "ダラ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 15,
+        "origin": "log"
+      },
+      {
+        "id": "0zj2vwfu",
+        "label": "トムヤ",
+        "note": "",
+        "groupId": "tomuya",
+        "firstSeenSeq": 16,
+        "origin": "log"
+      },
+      {
+        "id": "stp1gr20",
+        "label": "イヒ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 17,
+        "origin": "log"
+      },
+      {
+        "id": "4yla6w5k",
+        "label": "ギッ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 18,
+        "origin": "log"
+      },
+      {
+        "id": "cl4ca4yk",
+        "label": "バババ",
+        "note": "",
+        "groupId": "tomuya",
+        "firstSeenSeq": 19,
+        "origin": "log"
+      },
+      {
+        "id": "i2y8o706",
+        "label": "バーサ",
+        "note": "",
+        "groupId": "tomuya",
+        "firstSeenSeq": 20,
+        "origin": "log"
+      },
+      {
+        "id": "rii5plvi",
+        "label": "ドオ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 21,
+        "origin": "log"
+      },
+      {
+        "id": "npd7z3xc",
+        "label": "ヘーネ",
+        "note": "",
+        "groupId": "tomuya",
+        "firstSeenSeq": 22,
+        "origin": "log"
+      },
+      {
+        "id": "mp1zgy4k",
+        "label": "マー",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 23,
+        "origin": "log"
+      },
+      {
+        "id": "92g1fk4n",
+        "label": "グウ",
+        "note": "",
+        "groupId": "number",
+        "firstSeenSeq": 24,
+        "origin": "log"
+      },
+      {
+        "id": "5ufljwp7",
+        "label": "パロロ",
+        "note": "",
+        "groupId": "tomuya",
+        "firstSeenSeq": 25,
+        "origin": "log"
+      },
+      {
+        "id": "jpbi7n3p",
+        "label": "チャン",
+        "note": "",
+        "groupId": "tyann",
+        "firstSeenSeq": 26,
+        "origin": "log"
+      },
+      {
+        "id": "v2cwfikz",
+        "label": "チョボ",
+        "note": "",
+        "groupId": "tyann",
+        "firstSeenSeq": 27,
+        "origin": "log"
       }
     ]
   }

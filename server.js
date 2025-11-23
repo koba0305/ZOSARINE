@@ -95,7 +95,6 @@ const LEX_SEED_TERMS = [
   { label:"イザ",           groupId:"iti"    },
   { label:"ンマ",           groupId:"iti"    },
 
-
   { label:"プッチョ",       groupId:"tomuya" },
 
     { label:"シャーンシャーン", groupId:"zosan"  },
@@ -104,7 +103,10 @@ const LEX_SEED_TERMS = [
   { label:"パトゥ",         groupId:"zosan"  }, 
   { label:"パオ",           groupId:"zosan"    }, 
 
+
+    { label:"チケ",         groupId:"yes"    }, 
   { label:"フザケ",         groupId:"yes"    }, 
+    { label:"フザケッチ",         groupId:"yes"    }, 
     { label:"ナギ",           groupId:"yes"    },
 ];
 
@@ -338,7 +340,6 @@ const ARROW_CHOICES = {
 
 // ==== 語彙登録ヘルパ：コマンド実行時に初見登録 ====
 
-// 表示→内部値の辞書（既存）
 const COMMAND_ALIASES = {
   "パオ": "launch",  "ぱお": "launch",
   "プア": "launch2", "ぷあ": "launch2",
@@ -348,18 +349,17 @@ const COMMAND_ALIASES = {
   "ゾーサリーヌ": "name", "ぞーさりーぬ": "name",
 };
 
-// 逆引き（内部値 → 表示ラベル）を作る
+// 逆引き
 const COMMAND_LABEL_FROM_VALUE = (() => {
   const o = {};
   for (const [disp, val] of Object.entries(COMMAND_ALIASES)) {
-    // 既に入っていなければ代表表記を採用（ひらがな・カナ重複があるため）
     if (!(val in o)) o[val] = disp;
   }
   return o;
 })();
 function cmdValToLabel(v) { return COMMAND_LABEL_FROM_VALUE[v] || v; }
 
-// 相対方向 / 矢印の逆引き（既に導入済みなら重複定義は不要）
+// 相対方向 / 矢印の逆引き
 const REL_LABELS = { up: "バババ", down: "パロロ", right: "ヘーネ", left: "バーサ" };
 function relToLabel(v) { return REL_LABELS[v] || v; }
 
@@ -381,13 +381,8 @@ function seatRelToAbs(seat, rel) {
   return rel;
 }
 
-// （この下にゲームロジックや WS のハンドラ等を続けてください）
-// ===== ここは LABELS / SEAT_LABELS / DIR_ALIASES / ARROW_CHOICES / COMMAND_ALIASES の定義が
-// ===== すべて終わった“後”に貼り付けてください（この行より上にそれらの定数群があること）
 
 
-
-// 遅延初期化で “LABELS 未定義のうちに実行される” 事故を防ぐ
 let _KNOWN_TOKENS = null;
 function getKnownTokens() {
   if (!_KNOWN_TOKENS) _KNOWN_TOKENS = buildKnownTokenSet();
@@ -697,12 +692,24 @@ function maybeStartGame() {
 }
 const LEX_TABLE = "DEFAULT";  // 既に定義済みなら流用
 
-function log(line) {
-  state.logs.push(line);
-  console.log(line);
-  harvestLexFromLogLine(LEX_TABLE, line).catch(e => {
-    console.error("harvestLexFromLogLine error:", e);
-  });
+function log(line, opts = {}) {
+  const s = String(line);
+
+  // logs に push するオブジェクトを変更
+  const entry = {
+    text: s,
+    bold: !!opts.bold,  // ← 特定ログだけ true
+    type: opts.type || null,
+  };
+
+  console.log(s);
+  state.logs.push(entry);
+
+  broadcastAll({ type: "logLine", entry });
+
+  harvestLexFromLogLine(LEX_TABLE, s).catch(e =>
+    console.error("harvestLexFromLogLine error:", e)
+  );
 }
 
 
@@ -909,107 +916,145 @@ function assertTurn(seat) {
   if (seat !== need) throw new Error(`${seatLabel(need)} オメ ナギ`);
 }
 
+function normalizeInput(text) {
+  return String(text || "")
+    .replace(/\u3000/g, " ")  // 全角スペース → 半角
+    .replace(/\s+/g, " ")     // 連続スペースを 1 個に
+    .trim();
+}
 
+function makeJoinedKey(text) {
+  return normalizeInput(text).replace(/\s+/g, "").toLowerCase();
+}
 
-
-function onCommand(seat, text) {
-
-  const raw = String(text || "").trim();
-
-
-  if (tryReverseDeclaration(seat, text)) return;
-
-
-  {
-    const joined = raw.replace(/\s+/g, '').toLowerCase();
-    if (OATH_ALIASES.has(joined)) {
-      if (state.phase !== "arrow") throw new Error("フザケ オマフザケンパオ ナギ");
-      if (state.arrows[seat]) throw new Error("フザケ オマフザケンパオ ナギ(チャン ナギ)");
-      if (state.oath[seat]?.active) throw new Error("フザケ ギッ オマフザケンパオ");
-
-      state.oath[seat] = { active: true, hits: 0 };
-      log(`${seatLabel(seat)}: オマ フザケ ン パオ !!!!!`);
-      broadcastAll({ type: "state", data: snapshot() });
-      return;
-    }
+// トムヤの引数パース
+// rest: ["イヒギッバババ"] でも ["イヒギッ", "バババ"] でもOK
+function parsePutArgs(rest) {
+  const raw = (rest || []).join("");             // ["イヒギッ","バババ"] → "イヒギッバババ"
+  const s = raw.replace(/[\s\u3000]+/g, "").trim();
+  if (!s) {
+    throw new Error("フザケ トムヤ");
   }
 
-  {
-    const joined = String(text || "").replace(/\s+/g, '').toLowerCase();
-    if (VOW2X_ALIASES.has(joined)) {
-      if (state.phase !== "arrow") throw new Error("フザケ ププアププア ナギ");
-      if (state.arrows[seat]) throw new Error("フザケ ププアププア ナギ(チャン ナギ)");
-      if (state.vow2x[seat]?.active) throw new Error("フザケ ギッ ププアププア");
-      state.vow2x[seat] = { active: true };
-      log(`${seatLabel(seat)}: ププアププア !!!!!`);
-      broadcastAll({ type: "state", data: snapshot() });
-      return;
+  let dirTok = null;
+  for (const label of Object.keys(DIR_ALIASES)) {
+    if (s.endsWith(label)) {
+      dirTok = label;
+      break;
     }
   }
-
-  {
-    const joined = raw.replace(/\s+/g, '').toLowerCase();
-    if (PLACE_PASS_ALIASES.has(joined)) {
-      if (!(state.phase === "place1" || state.phase === "place2"))
-        throw new Error("フザケ ムクン ナギ");
-      assertTurn(seat);
-      log(`${seatLabel(seat)}: トムヤ ムクン`);
-      markDone(seat);
-      advanceTurn();
-      if (!tryAdvancePhase()) logTurnNow();
-      return;
-    }
+  if (!dirTok) {
+    throw new Error("フザケ トムヤ (バババ/パロロ/ヘーネ/バーサ) オメ");
   }
 
-
-
-
-  const { cmd, rest } = extractCmdAndRest(raw);
-  let parts = [cmd];
-  if (rest && rest.trim()) parts.push(...rest.trim().split(/\s+/));
-
-
-
-
-  function parsePutArgs(rest) {
-    const restJoined = (rest || "").replace(/[\s,.\-/_]+/g, "");
-
-    const pr = splitCellAndDir(restJoined);
-    if (pr) return { cellTok: pr[0], dirTok: pr[1] };
-
-
-    let parts2 = [];
-    if (rest && rest.trim()) parts2 = rest.trim().split(/\s+/);
-
-    if (parts2.length === 1) {
-      const pr2 = splitCellAndDir(parts2[0]);
-      if (pr2) return { cellTok: pr2[0], dirTok: pr2[1] };
-    } else if (parts2.length >= 2) {
-      const maybeCell = parts2[0] + parts2[1];
-      if (cellToXY(maybeCell)) {
-        return { cellTok: maybeCell, dirTok: parts2.slice(2).join("") };
-      } else {
-        const pr3 = splitCellAndDir(parts2[1]);
-        if (pr3) return { cellTok: parts2[0] + pr3[0], dirTok: pr3[1] };
-      }
-    }
+  const cellTok = s.slice(0, s.length - dirTok.length);
+  if (!cellTok) {
     throw new Error("フザケ べヒュー");
   }
+  return { cellTok, dirTok };
+}
+
+function onCommand(seat, raw) {
+  const norm  = normalizeInput(raw);
+  if (!norm) throw new Error("テメ ナギ オメ");
+
+  const parts = norm.split(" ");
+  const cmdTok = parts[0];
+  const rest   = parts.slice(1);
+
+  const cmd = COMMAND_ALIASES[cmdTok] || cmdTok;  // "チャン" → "arrow" など
+  const joined = makeJoinedKey(raw);              // oath / vow / pass 用
 
 
+  // ===== オマフザケンパオ（誓い） =====
+  if (OATH_ALIASES.has(joined)) {
+    if (state.phase !== "arrow")         throw new Error("フザケ オマフザケンパオ ナギ");
+    if (state.arrows[seat])             throw new Error("フザケ オマフザケンパオ ナギ(チャン ナギ)");
+    if (state.oath[seat]?.active)       throw new Error("フザケ ギッ オマフザケンパオ");
 
+    state.oath[seat] = { active: true, hits: 0 };
+log(`${seatLabel(seat)}: オマ フザケ ン パオ`, { bold: true });
 
+    broadcastAll({ type: "state", data: snapshot() });
+    return;
+  }
 
+  // ===== ププアププア（2倍誓い） =====
+  if (VOW2X_ALIASES.has(joined)) {
+    if (state.phase !== "arrow")          throw new Error("フザケ ププアププア ナギ");
+    if (state.arrows[seat])              throw new Error("フザケ ププアププア ナギ(チャン ナギ)");
+    if (state.vow2x[seat]?.active)       throw new Error("フザケ ギッ ププアププア");
 
+    state.vow2x[seat] = { active: true };
+log(`${seatLabel(seat)}: ププアププア`, { bold: true });
+
+    broadcastAll({ type: "state", data: snapshot() });
+    return;
+  }
+
+  // ===== トムヤ ムクン（置きパス） =====
+  if (PLACE_PASS_ALIASES.has(joined)) {
+    if (!(state.phase === "place1" || state.phase === "place2"))
+      throw new Error("フザケ ムクン ナギ");
+
+    assertTurn(seat);
+    log(`${seatLabel(seat)}: トムヤ ムクン`);
+    markDone(seat);
+    advanceTurn();
+    if (!tryAdvancePhase()) logTurnNow();
+    return;
+  }
+
+  // ===== cmd 分岐 =====
+
+  // --- 矢印（チャン） ---
+  if (cmd === "arrow") {
+    if (state.phase !== "arrow") throw new Error("フザケ チャン ナギ");
+    assertTurn(seat);
+    if (state.arrows[seat]) throw new Error("フザケ イヒ チャン");
+
+    const tok = parts[1];          // バサシバサシ／チョボ／ヘネシヘネシ（ひらがなでもOK）
+    if (!tok) throw new Error("フザケ チャン ン ベヒュー");
+
+    const arrowVal = ARROW_CHOICES[tok];   // "左" 系を left/center/right に正規化
+    if (!arrowVal) {
+      throw new Error("フザケ べヒュー チャン (バサシバサシ/チョボ/ヘネシヘネシ)");
+    }
+
+    // 安全側で tok のまま渡す
+    const xy = arrowXYFor(seat, tok);
+    if (!xy) {
+      throw new Error("フザケ べヒュー チャン (バサシバサシ/チョボ/ヘネシヘネシ)");
+    }
+
+    state.arrows[seat] = xy;
+
+    // ログの表示をカタカナ代表表記に統一
+    const cmdLabel   = cmdValToLabel(cmd);         // "arrow" → "チャン"
+    const arrowLabel = arrowValToLabel(arrowVal);  // "left" → "バサシバサシ" など
+
+    log(`${seatLabel(seat)}: ${cmdLabel} ${arrowLabel}`);
+
+    advanceTurn();
+    if (!tryAdvancePhase()) logTurnNow();
+    return;
+  }
+
+  // --- トムヤ置き ---
   if (cmd === "put") {
-    if (!(state.phase === "place1" || state.phase === "place2")) throw new Error("フザケ プッチョ ナギ");
+    if (!(state.phase === "place1" || state.phase === "place2")) {
+      throw new Error("フザケ プッチョ ナギ");
+    }
     assertTurn(seat);
 
-    const { cellTok, dirTok } = parsePutArgs(rest);
-    const xy = cellToXY(cellTok); if (!xy) throw new Error("フザケ べヒュー");
-    if (state.board[xy.y][xy.x]) throw new Error("フザケ プッチョトムヤ");
+    const { cellTok, dirTok } = parsePutArgs(rest);   // ← rest を渡せば中で正規化してくれる
+    const xy = cellToXY(cellTok);
+    if (!xy) throw new Error("フザケ べヒュー");
+    if (state.board[xy.y][xy.x]) throw new Error("フザケ べヒュー プッチョトムヤ");
 
-    const rel = normalizeDir(dirTok); if (!DIR_VECT[rel]) throw new Error("フザケ トムヤ (バババ/パロロ/ヘーネ/バーサ) オメ");
+    const rel = normalizeDir(dirTok);
+    if (!DIR_VECT[rel]) throw new Error("フザケ トムヤ (バババ/パロロ/ヘーネ/バーサ) オメ");
+
     const abs = seatRelToAbs(seat, rel);
 
     state.board[xy.y][xy.x] = { dir: abs, owner: seat };
@@ -1021,40 +1066,25 @@ function onCommand(seat, text) {
     return;
   }
 
-
-
-  if (cmd === "launch") { handleLaunchCommon(seat, "launch", parts[1]); return; }
+  // --- 発射 ---
+  if (cmd === "launch")  { handleLaunchCommon(seat, "launch",  parts[1]); return; }
   if (cmd === "launch2") { handleLaunchCommon(seat, "launch2", parts[1]); return; }
 
-
+  // --- トムヤ回収 ---
   if (cmd === "pickup" || cmd === "take" || cmd === "remove") {
     if (!(state.phase === "place1" || state.phase === "place2")) throw new Error("フザケ ムクン ナギ");
     assertTurn(seat);
-    const xy = cellToXY(parts[1]); if (!xy) throw new Error("フザケ べヒュー");
+
+    const xy = cellToXY(parts[1]);
+    if (!xy) throw new Error("フザケ べヒュー");
     const c = state.board[xy.y][xy.x];
     if (!c) throw new Error("フザケ トムヤ ");
     if (c.owner !== seat) throw new Error("フザケ オマ トムヤ ムクン オメ");
+
     state.board[xy.y][xy.x] = null;
     log(`${seatLabel(seat)}: ペピピ ${parts[1].toUpperCase()}`);
+
     markDone(seat);
-    advanceTurn();
-    if (!tryAdvancePhase()) logTurnNow();
-    return;
-  }
-
-
-  if (cmd === "arrow") {
-    if (state.phase !== "arrow") throw new Error("フザケ チャン ナギ");
-    assertTurn(seat);
-    if (state.arrows[seat]) throw new Error("フザケ イヒ チャン");
-    const tok = parts[1];
-    if (!tok) throw new Error("フザケ チャン ン ベヒュー");
-
-    const xy = arrowXYFor(seat, tok);
-    if (!xy) throw new Error("フザケ べヒュー チャン (バサシバサシ/チョボ/ヘネシヘネシ)");
-
-    state.arrows[seat] = xy;
-    log(`${seatLabel(seat)}: チャン ${tok}`);
     advanceTurn();
     if (!tryAdvancePhase()) logTurnNow();
     return;
@@ -1062,6 +1092,7 @@ function onCommand(seat, text) {
 
   throw new Error("フザケ テメ");
 }
+
 function addScore(seat, delta){
   if (!state.players[seat]) return;
   if (state.players[seat].score == null) state.players[seat].score = 1;
@@ -1147,7 +1178,7 @@ function handleLaunchCommon(seat, mode, arg) {
       if (o && o.active) {
         if (!o.hits) {
           state.players[s].score = (state.players[s].score || 0) + OATH_FAIL_PENALTY;
-          log(`${seatLabel(s)}: フザケ パーナ ${OATH_FAIL_PENALTY}`);
+          log(`${seatLabel(s)}: フザケ パオ チャン カ パーナ ${OATH_FAIL_PENALTY}`);
         }
         o.active = false;
       }
