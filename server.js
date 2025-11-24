@@ -692,24 +692,12 @@ function maybeStartGame() {
 }
 const LEX_TABLE = "DEFAULT";  // 既に定義済みなら流用
 
-function log(line, opts = {}) {
-  const s = String(line);
-
-  // logs に push するオブジェクトを変更
-  const entry = {
-    text: s,
-    bold: !!opts.bold,  // ← 特定ログだけ true
-    type: opts.type || null,
-  };
-
-  console.log(s);
-  state.logs.push(entry);
-
-  broadcastAll({ type: "logLine", entry });
-
-  harvestLexFromLogLine(LEX_TABLE, s).catch(e =>
-    console.error("harvestLexFromLogLine error:", e)
-  );
+function log(line) {
+  state.logs.push(line);
+  console.log(line);
+  harvestLexFromLogLine(LEX_TABLE, line).catch(e => {
+    console.error("harvestLexFromLogLine error:", e);
+  });
 }
 
 
@@ -973,8 +961,7 @@ function onCommand(seat, raw) {
     if (state.oath[seat]?.active)       throw new Error("フザケ ギッ オマフザケンパオ");
 
     state.oath[seat] = { active: true, hits: 0 };
-log(`${seatLabel(seat)}: オマ フザケ ン パオ`, { bold: true });
-
+    log(`${seatLabel(seat)}: オマ フザケ ン パオ`);
     broadcastAll({ type: "state", data: snapshot() });
     return;
   }
@@ -986,8 +973,7 @@ log(`${seatLabel(seat)}: オマ フザケ ン パオ`, { bold: true });
     if (state.vow2x[seat]?.active)       throw new Error("フザケ ギッ ププアププア");
 
     state.vow2x[seat] = { active: true };
-log(`${seatLabel(seat)}: ププアププア`, { bold: true });
-
+    log(`${seatLabel(seat)}: ププアププア`);
     broadcastAll({ type: "state", data: snapshot() });
     return;
   }
@@ -1178,7 +1164,7 @@ function handleLaunchCommon(seat, mode, arg) {
       if (o && o.active) {
         if (!o.hits) {
           state.players[s].score = (state.players[s].score || 0) + OATH_FAIL_PENALTY;
-          log(`${seatLabel(s)}: フザケ パオ チャン カ パーナ ${OATH_FAIL_PENALTY}`);
+          log(`${seatLabel(s)}: フザケ パオチャンカパーナ ${OATH_FAIL_PENALTY}`);
         }
         o.active = false;
       }
